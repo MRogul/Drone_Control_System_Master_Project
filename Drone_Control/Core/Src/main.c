@@ -46,7 +46,7 @@
 #define ESP32_MSG_LENGTH 6
 
 #define SAMPLE_TIME 0.01f
-#define PID_KP_MIN 7.0f
+#define PID_KP_MIN 8.0f
 #define PID_KP_MAX 15.0f
 #define PID_KI_MIN 7.0f
 #define PID_KI_MAX 15.0f
