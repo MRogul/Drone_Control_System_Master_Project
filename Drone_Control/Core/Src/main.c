@@ -58,9 +58,9 @@
 #define REF_ROLL_ANGLE 0.0f
 
 #define SPEED_MIN 48
-#define MAX_SPEED 1200
+#define MAX_SPEED 1500
 
-#define SPEED_OFFSET 900.0f
+#define SPEED_OFFSET 1200.0f
 #define ADC_TIMEOUT 1   // us
 
 #define speed 100
@@ -93,6 +93,8 @@ float tau = PID_TAU_MIN;
 volatile uint8_t emergency_stop_flag = 0;
 volatile float copter_pitch_angle;
 volatile float copter_roll_angle;
+volatile float copter_yaw_angle;
+volatile float copter_yaw_angle_intergral;
 volatile float speed_pitch_ref;
 volatile float speed_roll_ref;
 
@@ -380,12 +382,14 @@ void SystemClock_Config(void)
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwanie
 {
 	uint16_t speeds[4];
+
 	if (htim->Instance == TIM15) //sprawdzenie od którego timera jest przerwanie
 	{
-
 		/////////////POBIERANIE WYCHYLENIA Z CZUJNIKA MPU6050/////////////
 		copter_pitch_angle = MPU6050.KalmanAngleX;
 		copter_roll_angle = MPU6050.KalmanAngleY;
+		copter_yaw_angle = MPU6050.Gz;
+		copter_yaw_angle_intergral+=copter_yaw_angle*SAMPLE_TIME;
 		//////////////////OBLICZANIE WYJŚCIA REGULATORA WYKORZYSTUJĄC ERROR ORAZ REF ANGLE//////////////////
 		speed_pitch_ref = PID_Controller_Bartek_s_Lab(&pid_pitch,
 		REF_PITCH_ANGLE, copter_pitch_angle);
