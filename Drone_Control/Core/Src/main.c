@@ -98,6 +98,8 @@ volatile float copter_yaw_angle_intergral;
 volatile float speed_pitch_ref;
 volatile float speed_roll_ref;
 
+volatile uint8_t Trig_counter=0;
+
 volatile uint16_t speed_1_ref;
 volatile uint16_t speed_2_ref;
 volatile uint16_t speed_3_ref;
@@ -114,11 +116,11 @@ uint32_t UartDebugSoftTimer;
 
 MPU6050_t MPU6050;
 
-volatile uint32_t echo_start = 0;
 volatile uint32_t echo_end = 0;
 volatile uint8_t echo_captured = 0;
 volatile uint32_t last_trigger = 0;
 float distance_cm=0;
+float gyro_z_offset = 0;
 
 float R[3][3] = {
 		{0.9191, 0.3896, -0.0455},
@@ -189,12 +191,12 @@ int main(void)
   MX_TIM2_Init();
   MX_TIM15_Init();
   /* USER CODE BEGIN 2 */
-
-
-  HAL_TIM_Base_Start_IT(&htim2); //Czas do czujników odległościowych
-  HAL_TIM_Base_Start_IT(&htim15); //Timer od częstotliwości regulatora i wysyłania prędkości do drona
-
   MPU6050_Init(&hi2c3);
+
+
+  HAL_TIM_Base_Start(&htim2); //Czas do czujników odległościowych
+  HAL_TIM_Base_Start_IT(&htim15); //Timer od częstotliwości regulatora i wysyłania prędkości do drona
+  HAL_TIM_Base_Start_IT(&htim1); // control loop interrupt
 
 
   // PID controllers
@@ -204,9 +206,20 @@ int main(void)
   	PID_Init_Bartek_s_Lab(&pid_roll, PID_KP_MIN, PID_KI_MIN, PID_KD_MIN,
   	PID_TAU_MIN, -300.0f, 300.0f, SAMPLE_TIME);
 
-  	HAL_TIM_Base_Start_IT(&htim1); // control loop interrupt
+
 
   	UartDebugSoftTimer = HAL_GetTick();
+
+  	/////////////////////gyro offset calculation///////////////
+
+  	for (int i = 0; i < 1500; i++) {
+  		MPU6050_Read_All(&hi2c3, &MPU6050);
+  	    gyro_z_offset += MPU6050.Gz;
+  	    HAL_Delay(2); // np. 2 ms między pomiarami
+  	}
+  	gyro_z_offset /= 1500;
+  	copter_yaw_angle_intergral=0;
+
 
 	HAL_Delay(2000); // let the motor stop after uC RST
 
@@ -216,14 +229,12 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  	//printf("Roll");
-
-
 
   	memset(rx_esp32_data, 0x00, ESP32_MSG_LENGTH); //Zeruje bufor rx_esp32_data
   	HAL_UART_Receive_IT(ESP32_UART_HANDLE, rx_esp32_data,ESP32_MSG_LENGTH); // uruchamia odbieranie danych przez UART w trybie przerwań. Kiedy dane przyjdą, zostanie wywołane HAL_UART_RxCpltCallback.
 	while (1)
 	{
+		/*
 		if (HAL_GetTick() - last_trigger > 60) { // max 15 Hz
 		        last_trigger = HAL_GetTick();
 		        HCSR04_Trigger();
@@ -235,7 +246,7 @@ int main(void)
 		    distance_cm = diff * 0.0343f / 2.0f; // 343 m/s → 0.0343 cm/µs
 		    printf("Dystans: %.2f cm\n", distance_cm);
 		}
-
+		*/
 
 		if (white_button_flag == 1)
 		{
@@ -385,10 +396,18 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 
 	if (htim->Instance == TIM15) //sprawdzenie od którego timera jest przerwanie
 	{
+		if (Trig_counter>5){
+			HCSR04_Trigger();
+			distance_cm = echo_end * 0.0343f / 2.0f;
+			printf("Dystans: %.2f cm\n", distance_cm);
+			Trig_counter=0;
+		}
+		Trig_counter++;
+
 		/////////////POBIERANIE WYCHYLENIA Z CZUJNIKA MPU6050/////////////
 		copter_pitch_angle = MPU6050.KalmanAngleX;
 		copter_roll_angle = MPU6050.KalmanAngleY;
-		copter_yaw_angle = MPU6050.Gz;
+		copter_yaw_angle = MPU6050.Gz-gyro_z_offset;
 		copter_yaw_angle_intergral+=copter_yaw_angle*SAMPLE_TIME;
 		//////////////////OBLICZANIE WYJŚCIA REGULATORA WYKORZYSTUJĄC ERROR ORAZ REF ANGLE//////////////////
 		speed_pitch_ref = PID_Controller_Bartek_s_Lab(&pid_pitch,
@@ -495,7 +514,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 void HCSR04_Trigger(void) {
     HAL_GPIO_WritePin(TRIG_PIN_GPIO_Port, TRIG_PIN_Pin, GPIO_PIN_SET); // TRIG high
-    for (volatile int i = 0; i < 800; i++) __NOP(); // ~10 µs
+    for (volatile int i = 0; i < 400; i++) __NOP(); // ~50 µs
     HAL_GPIO_WritePin(TRIG_PIN_GPIO_Port, TRIG_PIN_Pin, GPIO_PIN_RESET); // TRIG low
 }
 
@@ -503,11 +522,12 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
     if (GPIO_Pin == GPIO_PIN_0) { // ECHO
         if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_0) == GPIO_PIN_SET) {
             // Zbocze narastające
-            echo_start = __HAL_TIM_GET_COUNTER(&htim2);
+        	__HAL_TIM_SET_COUNTER(&htim2, 0);
+        	HAL_TIM_Base_Start(&htim2);
         } else {
             // Zbocze opadające
             echo_end = __HAL_TIM_GET_COUNTER(&htim2);
-            echo_captured = 1;
+            HAL_TIM_Base_Stop(&htim2);
         }
     }
 }
