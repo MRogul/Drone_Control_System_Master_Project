@@ -45,6 +45,21 @@ Kalman_t KalmanZ = {
         .Q_bias = 0.003f,
         .R_measure = 0.03f,
 };
+void MPU6050_Calibrate_Gyro(I2C_HandleTypeDef *I2Cx, MPU6050_t *DataStruct, uint16_t samples) {
+    float sumGx = 0, sumGy = 0, sumGz = 0;
+
+    for (uint16_t i = 0; i < samples; i++) {
+        MPU6050_Read_Gyro(I2Cx, DataStruct);
+        sumGx += DataStruct->Gx;
+        sumGy += DataStruct->Gy;
+        sumGz += DataStruct->Gz;
+        HAL_Delay(2);  // dla częstotliwości 500 Hz
+    }
+
+    DataStruct->Gx_offset = sumGx / samples;
+    DataStruct->Gy_offset = sumGy / samples;
+    DataStruct->Gz_offset = sumGz / samples;
+}
 
 uint8_t MPU6050_Init(I2C_HandleTypeDef *I2Cx) {
     uint8_t check;
@@ -113,13 +128,14 @@ void MPU6050_Read_Gyro(I2C_HandleTypeDef *I2Cx, MPU6050_t *DataStruct) {
     DataStruct->Gyro_Z_RAW = (int16_t) (Rec_Data[4] << 8 | Rec_Data[5]);
 
     /*** convert the RAW values into dps (�/s)
-         we have to divide according to the Full scale value set in FS_SEL
+         we have to divide according to the Fu2ll scale value set in FS_SEL
          I have configured FS_SEL = 0. So I am dividing by 131.0
          for more details check GYRO_CONFIG Register              ****/
 
-    DataStruct->Gx = DataStruct->Gyro_X_RAW / 131.0;
-    DataStruct->Gy = DataStruct->Gyro_Y_RAW / 131.0;
-    DataStruct->Gz = DataStruct->Gyro_Z_RAW / 131.0;
+    DataStruct->Gx = DataStruct->Gyro_X_RAW / 131.0 - DataStruct->Gx_offset;
+    DataStruct->Gy = DataStruct->Gyro_Y_RAW / 131.0 - DataStruct->Gy_offset;
+    DataStruct->Gz = DataStruct->Gyro_Z_RAW / 131.0 - DataStruct->Gz_offset;
+
 }
 
 void MPU6050_Read_Temp(I2C_HandleTypeDef *I2Cx, MPU6050_t *DataStruct) {
@@ -154,13 +170,14 @@ void MPU6050_Read_All(I2C_HandleTypeDef *I2Cx, MPU6050_t *DataStruct) {
     DataStruct->Ay = DataStruct->Accel_Y_RAW / 16384.0;
     DataStruct->Az = DataStruct->Accel_Z_RAW / Accel_Z_corrector;
     DataStruct->Temperature = (float) ((int16_t) temp / (float) 340.0 + (float) 36.53);
-    DataStruct->Gx = DataStruct->Gyro_X_RAW / 131.0;
-    DataStruct->Gy = DataStruct->Gyro_Y_RAW / 131.0;
-    DataStruct->Gz = DataStruct->Gyro_Z_RAW / 131.0;
+    DataStruct->Gx = DataStruct->Gyro_X_RAW / 131.0 - DataStruct->Gx_offset;
+	DataStruct->Gy = DataStruct->Gyro_Y_RAW / 131.0 - DataStruct->Gy_offset;
+	DataStruct->Gz = DataStruct->Gyro_Z_RAW / 131.0 - DataStruct->Gz_offset;
 
     // Kalman angle solve
     double dt = (double) (HAL_GetTick() - timer) / 1000;
     timer = HAL_GetTick();
+    /*
     double roll;
     double roll_sqrt = sqrt(
             DataStruct->Accel_X_RAW * DataStruct->Accel_X_RAW + DataStruct->Accel_Z_RAW * DataStruct->Accel_Z_RAW);
@@ -169,6 +186,9 @@ void MPU6050_Read_All(I2C_HandleTypeDef *I2Cx, MPU6050_t *DataStruct) {
     } else {
         roll = 0.0;
     }
+    */
+    double roll = atan2(DataStruct->Ay, DataStruct->Az) * RAD_TO_DEG;
+
     double pitch = atan2(-DataStruct->Accel_X_RAW, DataStruct->Accel_Z_RAW) * RAD_TO_DEG;
     if ((pitch < -90 && DataStruct->KalmanAngleY > 90) || (pitch > 90 && DataStruct->KalmanAngleY < -90)) {
         KalmanY.angle = pitch;

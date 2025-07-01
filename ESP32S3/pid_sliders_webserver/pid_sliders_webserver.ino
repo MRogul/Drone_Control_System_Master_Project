@@ -84,6 +84,7 @@ void initWiFi() {
   //WiFi.mode(WIFI_STA);
   //WiFi.begin("Orange_Swiatlowod_AEA0", "Michal2000");
 
+  WiFi.mode(WIFI_AP);  
   WiFi.softAP(ssid, password);  //Start HOTspot removing password will disable security
 
   Serial.print("Connecting to WiFi ..");

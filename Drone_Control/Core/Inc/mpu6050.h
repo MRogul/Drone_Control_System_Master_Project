@@ -37,6 +37,10 @@ typedef struct {
 
     double KalmanAngleX;
     double KalmanAngleY;
+
+    float Gx_offset;
+    float Gy_offset;
+    float Gz_offset;
 } MPU6050_t;
 
 

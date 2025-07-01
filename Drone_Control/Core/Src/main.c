@@ -33,6 +33,7 @@
 #include "pid_controller.h"
 #include <string.h>
 #include <stdbool.h>
+#include "bno055_stm32.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -44,6 +45,7 @@
 /* USER CODE BEGIN PD */
 #define ESP32_UART_HANDLE &huart1
 #define ESP32_MSG_LENGTH 6
+#define BNO_I2C_HANDLE &hi2c3
 
 #define SAMPLE_TIME 0.01f
 #define PID_KP_MIN 7.0f
@@ -58,9 +60,9 @@
 #define REF_ROLL_ANGLE 0.0f
 
 #define SPEED_MIN 48
-#define MAX_SPEED 1500
+#define MAX_SPEED 1000
 
-#define SPEED_OFFSET 1200.0f
+#define SPEED_OFFSET 700.0f
 #define ADC_TIMEOUT 1   // us
 
 #define speed 100
@@ -89,7 +91,9 @@ float kp = PID_KP_MIN;
 float ki = PID_KI_MIN;
 float kd = PID_KD_MIN;
 float tau = PID_TAU_MIN;
+float echo_start_flag=0;
 
+volatile bno055_vector_t bno_vector;
 volatile uint8_t emergency_stop_flag = 0;
 volatile float copter_pitch_angle;
 volatile float copter_roll_angle;
@@ -97,6 +101,7 @@ volatile float copter_yaw_angle;
 volatile float copter_yaw_angle_intergral;
 volatile float speed_pitch_ref;
 volatile float speed_roll_ref;
+volatile float SSGy, SSGx;
 
 volatile uint8_t Trig_counter=0;
 
@@ -191,8 +196,8 @@ int main(void)
   MX_TIM2_Init();
   MX_TIM15_Init();
   /* USER CODE BEGIN 2 */
-  MPU6050_Init(&hi2c3);
-
+  //MPU6050_Init(&hi2c3);
+  //MPU6050_Calibrate_Gyro(&hi2c3, &MPU6050, 500);
 
   HAL_TIM_Base_Start(&htim2); //Czas do czujników odległościowych
   HAL_TIM_Base_Start_IT(&htim15); //Timer od częstotliwości regulatora i wysyłania prędkości do drona
@@ -206,24 +211,16 @@ int main(void)
   	PID_Init_Bartek_s_Lab(&pid_roll, PID_KP_MIN, PID_KI_MIN, PID_KD_MIN,
   	PID_TAU_MIN, -300.0f, 300.0f, SAMPLE_TIME);
 
-
-
   	UartDebugSoftTimer = HAL_GetTick();
-
-  	/////////////////////gyro offset calculation///////////////
-
-  	for (int i = 0; i < 1500; i++) {
-  		MPU6050_Read_All(&hi2c3, &MPU6050);
-  	    gyro_z_offset += MPU6050.Gz;
-  	    HAL_Delay(2); // np. 2 ms między pomiarami
-  	}
-  	gyro_z_offset /= 1500;
-  	copter_yaw_angle_intergral=0;
-
 
 	HAL_Delay(2000); // let the motor stop after uC RST
 
 	dshot_arm_all_esc();
+
+	// AHRS
+		bno055_assignI2C(BNO_I2C_HANDLE);
+		bno055_setup();
+		bno055_setOperationModeNDOF();
 
   /* USER CODE END 2 */
 
@@ -297,14 +294,7 @@ int main(void)
 		PID_Controller_Update_Gains(&pid_roll, kp, ki, kd, tau);
 
 		//dshot_send_all_ref_speeds(speed_ref);
-
-		MPU6050_Read_All(&hi2c3, &MPU6050);
-		AngX= MPU6050.KalmanAngleX;
-		AngY= MPU6050.KalmanAngleY;
-
-		printf("Roll: %.2f", AngX);
-		printf("Roll\r\n");
-
+		/*
 		kali[0]= MPU6050.Accel_X_RAW;
 		kali[1]= MPU6050.Accel_Y_RAW;
 		kali[2]= MPU6050.Accel_Z_RAW;
@@ -318,7 +308,7 @@ int main(void)
 				ToDrone[i]+=R[i][j]*kali[j];
 			}
 		}
-
+		*/
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -398,17 +388,22 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 	{
 		if (Trig_counter>5){
 			HCSR04_Trigger();
-			distance_cm = echo_end * 0.0343f / 2.0f;
-			printf("Dystans: %.2f cm\n", distance_cm);
+
 			Trig_counter=0;
 		}
 		Trig_counter++;
-
+		distance_cm = echo_end * 0.0343f / 2.0f;
+		/*
 		/////////////POBIERANIE WYCHYLENIA Z CZUJNIKA MPU6050/////////////
+		MPU6050_Read_All(&hi2c3, &MPU6050);
 		copter_pitch_angle = MPU6050.KalmanAngleX;
 		copter_roll_angle = MPU6050.KalmanAngleY;
-		copter_yaw_angle = MPU6050.Gz-gyro_z_offset;
-		copter_yaw_angle_intergral+=copter_yaw_angle*SAMPLE_TIME;
+		copter_yaw_angle+=MPU6050.Gz*SAMPLE_TIME;
+		*/
+		////////////////DANE Z BNO///////////////////
+		bno_vector = bno055_getVectorEuler();
+		copter_pitch_angle = bno_vector.y;
+		copter_roll_angle = bno_vector.z;
 		//////////////////OBLICZANIE WYJŚCIA REGULATORA WYKORZYSTUJĄC ERROR ORAZ REF ANGLE//////////////////
 		speed_pitch_ref = PID_Controller_Bartek_s_Lab(&pid_pitch,
 		REF_PITCH_ANGLE, copter_pitch_angle);
@@ -481,7 +476,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 		speeds[1] = speed_2_ref;
 		speeds[2] = speed_3_ref;
 		speeds[3] = speed_4_ref;
-		dshot_send_all_ref_speeds(speeds);
+		//dshot_send_all_ref_speeds(speeds);
 	}
 
 }
@@ -516,18 +511,21 @@ void HCSR04_Trigger(void) {
     HAL_GPIO_WritePin(TRIG_PIN_GPIO_Port, TRIG_PIN_Pin, GPIO_PIN_SET); // TRIG high
     for (volatile int i = 0; i < 400; i++) __NOP(); // ~50 µs
     HAL_GPIO_WritePin(TRIG_PIN_GPIO_Port, TRIG_PIN_Pin, GPIO_PIN_RESET); // TRIG low
+    echo_start_flag=0;
 }
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
-    if (GPIO_Pin == GPIO_PIN_0) { // ECHO
-        if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_0) == GPIO_PIN_SET) {
-            // Zbocze narastające
-        	__HAL_TIM_SET_COUNTER(&htim2, 0);
-        	HAL_TIM_Base_Start(&htim2);
+    if (GPIO_Pin == ECHO_PIN_Pin) {
+        if (!echo_start_flag) {
+            // Narastające zbocze – start pomiaru
+            echo_start_flag = 1;
+            __HAL_TIM_SET_COUNTER(&htim2, 0);
+            HAL_TIM_Base_Start(&htim2);
         } else {
-            // Zbocze opadające
+            // Opadające zbocze – koniec pomiaru
             echo_end = __HAL_TIM_GET_COUNTER(&htim2);
             HAL_TIM_Base_Stop(&htim2);
+            echo_start_flag = 0;
         }
     }
 }
