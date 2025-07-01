@@ -34,6 +34,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include "bno055_stm32.h"
+#include "U_to_throttle.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -48,13 +49,13 @@
 #define BNO_I2C_HANDLE &hi2c3
 
 #define SAMPLE_TIME 0.01f
-#define PID_KP_MIN 7.0f
+#define PID_KP_MIN 10.0f
 #define PID_KP_MAX 15.0f
-#define PID_KI_MIN 7.0f
+#define PID_KI_MIN 1.0f
 #define PID_KI_MAX 15.0f
-#define PID_KD_MIN 5.0f
+#define PID_KD_MIN 2.0f
 #define PID_KD_MAX 10.0f
-#define PID_TAU_MIN 0.02f
+#define PID_TAU_MIN 0.01f
 #define PID_TAU_MAX 0.06f
 #define REF_PITCH_ANGLE 0.0f
 #define REF_ROLL_ANGLE 0.0f
@@ -92,6 +93,7 @@ float ki = PID_KI_MIN;
 float kd = PID_KD_MIN;
 float tau = PID_TAU_MIN;
 float echo_start_flag=0;
+volatile uint8_t SS=0;
 
 volatile bno055_vector_t bno_vector;
 volatile uint8_t emergency_stop_flag = 0;
@@ -166,7 +168,7 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
+	test();
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -383,6 +385,7 @@ void SystemClock_Config(void)
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwanie
 {
 	uint16_t speeds[4];
+	uint16_t base[4];
 
 	if (htim->Instance == TIM15) //sprawdzenie od którego timera jest przerwanie
 	{
@@ -404,20 +407,30 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 		bno_vector = bno055_getVectorEuler();
 		copter_pitch_angle = bno_vector.y;
 		copter_roll_angle = bno_vector.z;
+		copter_yaw_angle = bno_vector.x;
 		//////////////////OBLICZANIE WYJŚCIA REGULATORA WYKORZYSTUJĄC ERROR ORAZ REF ANGLE//////////////////
 		speed_pitch_ref = PID_Controller_Bartek_s_Lab(&pid_pitch,
 		REF_PITCH_ANGLE, copter_pitch_angle);
 		speed_roll_ref = PID_Controller_Bartek_s_Lab(&pid_roll, REF_ROLL_ANGLE,
 				copter_roll_angle);
-		////////////////Z OBLICZONYCH PRĘDKOŚCI WZGLĘDEM
-		speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+		////////////////2DOF/////////////////////
+
+		speed_1_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
 				- speed_pitch_ref);
-		speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+		speed_2_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
 				+ speed_pitch_ref);
-		speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+		speed_3_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
 				+ speed_pitch_ref);
-		speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+		speed_4_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
 				- speed_pitch_ref);
+
+		/////////////1DOF///////////////////////////
+				/*
+		speed_1_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref);
+		speed_2_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref);
+		speed_3_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref);
+		speed_4_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref);
+				*/
 		///////////////SPRAWDZENIE CZY PRĘDKOŚCI MIESZCZĄ SIĘ W ZAKRESIE//////////
 		// Double-check :))
 		if (speed_1_ref < 48)
@@ -476,9 +489,18 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 		speeds[1] = speed_2_ref;
 		speeds[2] = speed_3_ref;
 		speeds[3] = speed_4_ref;
-		//dshot_send_all_ref_speeds(speeds);
-	}
+		if (SS==1){
+			dshot_send_all_ref_speeds(speeds);
+		}
+		else{
+			base[0]=100;
+			base[1]=100;
+			base[2]=100;
+			base[3]=100;
+			dshot_send_all_ref_speeds(base);
+		}
 
+	}
 }
 
 uint8_t compute_crc8(uint8_t *data, uint8_t length) {
