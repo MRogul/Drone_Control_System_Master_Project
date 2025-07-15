@@ -60,9 +60,9 @@
 
 
 #define SPEED_MIN 48
-#define MAX_SPEED 1800
+#define MAX_SPEED 2000
 
-#define SPEED_OFFSET 1400.0f
+#define SPEED_OFFSET 1450.0f
 #define ADC_TIMEOUT 1   // us
 
 #define speed 100
@@ -87,20 +87,27 @@ volatile uint8_t white_button_flag = 0;
 PID_t pid_pitch;
 PID_t pid_roll;
 PID_t pid_yaw;
+PID_t pid_z;
 
-float kp = PID_KP_MIN;
-float ki = PID_KI_MIN;
-float kd = PID_KD_MIN;
+float kp = 25;
+float ki = 6;
+float kd = 4;
 float tau = PID_TAU_MIN;
 
-float kp_y = 20;
-float ki_y = 8;
+float kp_y = 30;
+float ki_y = 12;
 float kd_y = 4;
 float tau_y = PID_TAU_MIN;
+
+float kp_z = 1;
+float ki_z = 1;
+float kd_z = 0.1;
+float tau_z = PID_TAU_MIN;
 
 float REF_PITCH_ANGLE= 0.0;
 float REF_ROLL_ANGLE= 0.0;
 float REF_YAW_ANGLE= 180.0;
+float REF_Z_DISTANCE= 10;
 
 float echo_start_flag=0;
 volatile uint8_t SS=0;
@@ -110,10 +117,15 @@ volatile uint8_t emergency_stop_flag = 0;
 volatile float copter_pitch_angle;
 volatile float copter_roll_angle;
 volatile float copter_yaw_angle;
+volatile float copter_z_distance;
+
+
 volatile float copter_yaw_angle_intergral;
 volatile float speed_pitch_ref;
 volatile float speed_roll_ref;
 volatile float speed_yaw_ref;
+volatile float speed_z_ref;
+
 volatile float SSGy, SSGx;
 
 volatile uint8_t Trig_counter=0;
@@ -218,13 +230,16 @@ int main(void)
 
   // PID controllers
   	PID_Init_Bartek_s_Lab(&pid_pitch, PID_KP_MIN, PID_KI_MIN, PID_KD_MIN,
-  	PID_TAU_MIN, -300.0f, 300.0f, SAMPLE_TIME);
+  	PID_TAU_MIN, -600.0f, 600.0f, SAMPLE_TIME);
 
   	PID_Init_Bartek_s_Lab(&pid_roll, PID_KP_MIN, PID_KI_MIN, PID_KD_MIN,
-  	PID_TAU_MIN, -300.0f, 300.0f, SAMPLE_TIME);
+  	PID_TAU_MIN, -600.0f, 600.0f, SAMPLE_TIME);
 
   	PID_Init_Bartek_s_Lab(&pid_yaw, kp_y, ki_y, kd_y,
   	tau_y, -300.0f, 300.0f, SAMPLE_TIME);
+
+  	PID_Init_Bartek_s_Lab(&pid_z, kp_z, ki_z, kd_z,
+  	  	tau_z, -400.0f, 400.0f, SAMPLE_TIME);
 
   	UartDebugSoftTimer = HAL_GetTick();
 
@@ -301,6 +316,7 @@ int main(void)
 				PID_Controller_Update_Gains(&pid_pitch, kp, ki, kd, tau);
 				PID_Controller_Update_Gains(&pid_roll, kp, ki, kd, tau);
 				PID_Controller_Update_Gains(&pid_yaw, kp_y, ki_y, kd_y, tau_y);
+				PID_Controller_Update_Gains(&pid_z, kp_z, ki_z, kd_z, tau_z);
 			}
 
 
@@ -309,6 +325,7 @@ int main(void)
 		PID_Controller_Update_Gains(&pid_pitch, kp, ki, kd, tau);
 		PID_Controller_Update_Gains(&pid_roll, kp, ki, kd, tau);
 		PID_Controller_Update_Gains(&pid_yaw, kp_y, ki_y, kd_y, tau_y);
+		PID_Controller_Update_Gains(&pid_z, kp_z, ki_z, kd_z, tau_z);
 
 		//dshot_send_all_ref_speeds(speed_ref);
 		/*
@@ -411,7 +428,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 			Trig_counter=0;
 
 		}
-		distance_cm = echo_end * 0.0343f / 2.0f;
+		copter_z_distance = echo_end * 0.0343f / 2.0f;
 		Trig_counter++;
 
 		/*
@@ -435,19 +452,21 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 				copter_roll_angle);
 		speed_yaw_ref = PID_Controller_Bartek_s_Lab(&pid_yaw, REF_YAW_ANGLE,
 				copter_yaw_angle);
+		speed_z_ref = PID_Controller_Bartek_s_Lab(&pid_z, REF_Z_DISTANCE,
+						copter_z_distance);
 
 		////////////////3DOF/////////////////////
 
 		//GetThrottle(U_vec, speeds);
 
 		speed_1_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
-				- speed_pitch_ref +speed_yaw_ref);
+				- speed_pitch_ref +speed_yaw_ref+speed_z_ref);
 		speed_2_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
-				+ speed_pitch_ref -speed_yaw_ref);
+				+ speed_pitch_ref -speed_yaw_ref+speed_z_ref);
 		speed_3_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
-				+ speed_pitch_ref +speed_yaw_ref);
+				+ speed_pitch_ref +speed_yaw_ref+speed_z_ref);
 		speed_4_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
-				- speed_pitch_ref -speed_yaw_ref);
+				- speed_pitch_ref -speed_yaw_ref+speed_z_ref);
 
 		////////////////2DOF/////////////////////
 		/*
