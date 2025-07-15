@@ -5,7 +5,7 @@
 
 #define num_DOF 3
 
-void GetThrottle(float u_vector[num_DOF]);
+void GetThrottle(float *u_vector, float *speed);
 
 
 #endif /* U_to_throttle_H */

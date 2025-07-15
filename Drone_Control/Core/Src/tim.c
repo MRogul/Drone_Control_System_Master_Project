@@ -286,7 +286,7 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef* tim_baseHandle)
     __HAL_LINKDMA(tim_baseHandle,hdma[TIM_DMA_ID_COMMUTATION],hdma_tim1_ch4_trig_com);
 
     /* TIM1 interrupt Init */
-    HAL_NVIC_SetPriority(TIM1_BRK_TIM15_IRQn, 0, 0);
+    HAL_NVIC_SetPriority(TIM1_BRK_TIM15_IRQn, 1, 0);
     HAL_NVIC_EnableIRQ(TIM1_BRK_TIM15_IRQn);
   /* USER CODE BEGIN TIM1_MspInit 1 */
 
@@ -312,7 +312,7 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef* tim_baseHandle)
     __HAL_RCC_TIM15_CLK_ENABLE();
 
     /* TIM15 interrupt Init */
-    HAL_NVIC_SetPriority(TIM1_BRK_TIM15_IRQn, 0, 0);
+    HAL_NVIC_SetPriority(TIM1_BRK_TIM15_IRQn, 1, 0);
     HAL_NVIC_EnableIRQ(TIM1_BRK_TIM15_IRQn);
   /* USER CODE BEGIN TIM15_MspInit 1 */
 

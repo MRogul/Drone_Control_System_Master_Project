@@ -49,21 +49,20 @@
 #define BNO_I2C_HANDLE &hi2c3
 
 #define SAMPLE_TIME 0.01f
-#define PID_KP_MIN 10.0f
-#define PID_KP_MAX 15.0f
-#define PID_KI_MIN 1.0f
+#define PID_KP_MIN 18.0f
+#define PID_KP_MAX 25.0f
+#define PID_KI_MIN 2.0f
 #define PID_KI_MAX 15.0f
-#define PID_KD_MIN 2.0f
+#define PID_KD_MIN 4.0f
 #define PID_KD_MAX 10.0f
 #define PID_TAU_MIN 0.01f
 #define PID_TAU_MAX 0.06f
-#define REF_PITCH_ANGLE 0.0f
-#define REF_ROLL_ANGLE 0.0f
+
 
 #define SPEED_MIN 48
-#define MAX_SPEED 1000
+#define MAX_SPEED 1800
 
-#define SPEED_OFFSET 700.0f
+#define SPEED_OFFSET 1400.0f
 #define ADC_TIMEOUT 1   // us
 
 #define speed 100
@@ -87,11 +86,22 @@ volatile uint8_t white_button_flag = 0;
 //PID
 PID_t pid_pitch;
 PID_t pid_roll;
+PID_t pid_yaw;
 
 float kp = PID_KP_MIN;
 float ki = PID_KI_MIN;
 float kd = PID_KD_MIN;
 float tau = PID_TAU_MIN;
+
+float kp_y = 20;
+float ki_y = 8;
+float kd_y = 4;
+float tau_y = PID_TAU_MIN;
+
+float REF_PITCH_ANGLE= 0.0;
+float REF_ROLL_ANGLE= 0.0;
+float REF_YAW_ANGLE= 180.0;
+
 float echo_start_flag=0;
 volatile uint8_t SS=0;
 
@@ -103,6 +113,7 @@ volatile float copter_yaw_angle;
 volatile float copter_yaw_angle_intergral;
 volatile float speed_pitch_ref;
 volatile float speed_roll_ref;
+volatile float speed_yaw_ref;
 volatile float SSGy, SSGx;
 
 volatile uint8_t Trig_counter=0;
@@ -168,7 +179,6 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-	test();
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -212,6 +222,9 @@ int main(void)
 
   	PID_Init_Bartek_s_Lab(&pid_roll, PID_KP_MIN, PID_KI_MIN, PID_KD_MIN,
   	PID_TAU_MIN, -300.0f, 300.0f, SAMPLE_TIME);
+
+  	PID_Init_Bartek_s_Lab(&pid_yaw, kp_y, ki_y, kd_y,
+  	tau_y, -300.0f, 300.0f, SAMPLE_TIME);
 
   	UartDebugSoftTimer = HAL_GetTick();
 
@@ -287,6 +300,7 @@ int main(void)
 
 				PID_Controller_Update_Gains(&pid_pitch, kp, ki, kd, tau);
 				PID_Controller_Update_Gains(&pid_roll, kp, ki, kd, tau);
+				PID_Controller_Update_Gains(&pid_yaw, kp_y, ki_y, kd_y, tau_y);
 			}
 
 
@@ -294,6 +308,7 @@ int main(void)
 
 		PID_Controller_Update_Gains(&pid_pitch, kp, ki, kd, tau);
 		PID_Controller_Update_Gains(&pid_roll, kp, ki, kd, tau);
+		PID_Controller_Update_Gains(&pid_yaw, kp_y, ki_y, kd_y, tau_y);
 
 		//dshot_send_all_ref_speeds(speed_ref);
 		/*
@@ -386,6 +401,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 {
 	uint16_t speeds[4];
 	uint16_t base[4];
+	//float U_vec[3];
 
 	if (htim->Instance == TIM15) //sprawdzenie od którego timera jest przerwanie
 	{
@@ -393,9 +409,11 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 			HCSR04_Trigger();
 
 			Trig_counter=0;
+
 		}
-		Trig_counter++;
 		distance_cm = echo_end * 0.0343f / 2.0f;
+		Trig_counter++;
+
 		/*
 		/////////////POBIERANIE WYCHYLENIA Z CZUJNIKA MPU6050/////////////
 		MPU6050_Read_All(&hi2c3, &MPU6050);
@@ -408,13 +426,31 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 		copter_pitch_angle = bno_vector.y;
 		copter_roll_angle = bno_vector.z;
 		copter_yaw_angle = bno_vector.x;
+
 		//////////////////OBLICZANIE WYJŚCIA REGULATORA WYKORZYSTUJĄC ERROR ORAZ REF ANGLE//////////////////
-		speed_pitch_ref = PID_Controller_Bartek_s_Lab(&pid_pitch,
-		REF_PITCH_ANGLE, copter_pitch_angle);
+
+		speed_pitch_ref = PID_Controller_Bartek_s_Lab(&pid_pitch,REF_PITCH_ANGLE,
+				copter_pitch_angle);
 		speed_roll_ref = PID_Controller_Bartek_s_Lab(&pid_roll, REF_ROLL_ANGLE,
 				copter_roll_angle);
-		////////////////2DOF/////////////////////
+		speed_yaw_ref = PID_Controller_Bartek_s_Lab(&pid_yaw, REF_YAW_ANGLE,
+				copter_yaw_angle);
 
+		////////////////3DOF/////////////////////
+
+		//GetThrottle(U_vec, speeds);
+
+		speed_1_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+				- speed_pitch_ref +speed_yaw_ref);
+		speed_2_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+				+ speed_pitch_ref -speed_yaw_ref);
+		speed_3_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+				+ speed_pitch_ref +speed_yaw_ref);
+		speed_4_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+				- speed_pitch_ref -speed_yaw_ref);
+
+		////////////////2DOF/////////////////////
+		/*
 		speed_1_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
 				- speed_pitch_ref);
 		speed_2_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
@@ -423,14 +459,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 				+ speed_pitch_ref);
 		speed_4_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
 				- speed_pitch_ref);
-
+*/
 		/////////////1DOF///////////////////////////
-				/*
+		/*
 		speed_1_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref);
 		speed_2_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref);
 		speed_3_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref);
 		speed_4_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref);
-				*/
+		*/
 		///////////////SPRAWDZENIE CZY PRĘDKOŚCI MIESZCZĄ SIĘ W ZAKRESIE//////////
 		// Double-check :))
 		if (speed_1_ref < 48)
@@ -538,7 +574,7 @@ void HCSR04_Trigger(void) {
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
     if (GPIO_Pin == ECHO_PIN_Pin) {
-        if (!echo_start_flag) {
+        if (echo_start_flag==0) {
             // Narastające zbocze – start pomiaru
             echo_start_flag = 1;
             __HAL_TIM_SET_COUNTER(&htim2, 0);
@@ -567,8 +603,7 @@ void Error_Handler(void)
   }
   /* USER CODE END Error_Handler_Debug */
 }
-
-#ifdef  USE_FULL_ASSERT
+#ifdef USE_FULL_ASSERT
 /**
   * @brief  Reports the name of the source file and the source line number
   *         where the assert_param error has occurred.
