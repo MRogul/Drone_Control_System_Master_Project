@@ -35,6 +35,7 @@
 #include <stdbool.h>
 #include "bno055_stm32.h"
 #include "U_to_throttle.h"
+#include "imu_fusion.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -55,14 +56,14 @@
 #define PID_KI_MAX 15.0f
 #define PID_KD_MIN 4.0f
 #define PID_KD_MAX 10.0f
-#define PID_TAU_MIN 0.01f
+#define PID_TAU_MIN 0.2f
 #define PID_TAU_MAX 0.06f
 
 
 #define SPEED_MIN 48
-#define MAX_SPEED 2000
+#define MAX_SPEED 1600
 
-#define SPEED_OFFSET 1450.0f
+#define SPEED_OFFSET 500.0f
 #define ADC_TIMEOUT 1   // us
 
 #define speed 100
@@ -89,14 +90,14 @@ PID_t pid_roll;
 PID_t pid_yaw;
 PID_t pid_z;
 
-float kp = 25;
-float ki = 6;
-float kd = 4;
+float kp = 5.2;
+float ki = 1.8;
+float kd = 20;
 float tau = PID_TAU_MIN;
 
-float kp_y = 30;
-float ki_y = 12;
-float kd_y = 4;
+float kp_y = 2.8;
+float ki_y = 0.1;
+float kd_y = 10;
 float tau_y = PID_TAU_MIN;
 
 float kp_z = 1;
@@ -109,6 +110,7 @@ float REF_ROLL_ANGLE= 0.0;
 float REF_YAW_ANGLE= 180.0;
 float REF_Z_DISTANCE= 10;
 
+////////////////////////
 float echo_start_flag=0;
 volatile uint8_t SS=0;
 
@@ -118,6 +120,9 @@ volatile float copter_pitch_angle;
 volatile float copter_roll_angle;
 volatile float copter_yaw_angle;
 volatile float copter_z_distance;
+
+volatile float copter_pitch_angle_bno;
+volatile float copter_roll_angle_bno;
 
 
 volatile float copter_yaw_angle_intergral;
@@ -145,6 +150,7 @@ uint8_t rx_esp32_data[ESP32_MSG_LENGTH];
 uint32_t UartDebugSoftTimer;
 
 MPU6050_t MPU6050;
+IMU_Angles imu_angles;
 
 volatile uint32_t echo_end = 0;
 volatile uint8_t echo_captured = 0;
@@ -230,16 +236,16 @@ int main(void)
 
   // PID controllers
   	PID_Init_Bartek_s_Lab(&pid_pitch, PID_KP_MIN, PID_KI_MIN, PID_KD_MIN,
-  	PID_TAU_MIN, -600.0f, 600.0f, SAMPLE_TIME);
+  	PID_TAU_MIN, -200.0f, 200.0f, SAMPLE_TIME);
 
   	PID_Init_Bartek_s_Lab(&pid_roll, PID_KP_MIN, PID_KI_MIN, PID_KD_MIN,
-  	PID_TAU_MIN, -600.0f, 600.0f, SAMPLE_TIME);
+  	PID_TAU_MIN, -200.0f, 200.0f, SAMPLE_TIME);
 
   	PID_Init_Bartek_s_Lab(&pid_yaw, kp_y, ki_y, kd_y,
   	tau_y, -300.0f, 300.0f, SAMPLE_TIME);
 
   	PID_Init_Bartek_s_Lab(&pid_z, kp_z, ki_z, kd_z,
-  	  	tau_z, -400.0f, 400.0f, SAMPLE_TIME);
+  	  	tau_z, -100.0f, 400.0f, SAMPLE_TIME);
 
   	UartDebugSoftTimer = HAL_GetTick();
 
@@ -438,10 +444,19 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 		copter_roll_angle = MPU6050.KalmanAngleY;
 		copter_yaw_angle+=MPU6050.Gz*SAMPLE_TIME;
 		*/
-		////////////////DANE Z BNO///////////////////
+		////////////////DANE Z BNO(SUROWE+WEWNĘTRZNA FUZJA)//////////
+		bno055_vector_t acc= bno055_getVectorAccelerometer();
+		bno055_vector_t gyro= bno055_getVectorGyroscope();
+		IMU_Fusion_Update(&imu_angles, acc.x, acc.y, acc.z, gyro.x, gyro.y, SAMPLE_TIME );
+		copter_pitch_angle= imu_angles.pitch;
+		copter_roll_angle = imu_angles.roll;
+
+		////////////////DANE Z BNO(ZEWNĘTRZNA FUZJA)///////////////////
+		/*
+
 		bno_vector = bno055_getVectorEuler();
-		copter_pitch_angle = bno_vector.y;
-		copter_roll_angle = bno_vector.z;
+		copter_pitch_angle_bno = bno_vector.y;
+		copter_roll_angle_bno = bno_vector.z;
 		copter_yaw_angle = bno_vector.x;
 
 		//////////////////OBLICZANIE WYJŚCIA REGULATORA WYKORZYSTUJĄC ERROR ORAZ REF ANGLE//////////////////
@@ -455,36 +470,48 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 		speed_z_ref = PID_Controller_Bartek_s_Lab(&pid_z, REF_Z_DISTANCE,
 						copter_z_distance);
 
+
+		////////////////4DOF/////////////////////
+
+		speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+				+ speed_pitch_ref +speed_yaw_ref+speed_z_ref);
+		speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+				- speed_pitch_ref -speed_yaw_ref+speed_z_ref);
+		speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+				- speed_pitch_ref +speed_yaw_ref+speed_z_ref);
+		speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+				+ speed_pitch_ref -speed_yaw_ref+speed_z_ref);
+
 		////////////////3DOF/////////////////////
 
-		//GetThrottle(U_vec, speeds);
-
-		speed_1_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
-				- speed_pitch_ref +speed_yaw_ref+speed_z_ref);
-		speed_2_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
-				+ speed_pitch_ref -speed_yaw_ref+speed_z_ref);
-		speed_3_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
-				+ speed_pitch_ref +speed_yaw_ref+speed_z_ref);
-		speed_4_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
-				- speed_pitch_ref -speed_yaw_ref+speed_z_ref);
-
+		/*
+		speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+				+ speed_pitch_ref +speed_yaw_ref);
+		speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+				- speed_pitch_ref -speed_yaw_ref);
+		speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+				- speed_pitch_ref +speed_yaw_ref);
+		speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+				+ speed_pitch_ref -speed_yaw_ref);
+*/
 		////////////////2DOF/////////////////////
 		/*
-		speed_1_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
-				- speed_pitch_ref);
-		speed_2_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+		speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
 				+ speed_pitch_ref);
-		speed_3_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
-				+ speed_pitch_ref);
-		speed_4_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+		speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
 				- speed_pitch_ref);
+		speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+				- speed_pitch_ref);
+		speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+				+ speed_pitch_ref);
 */
+	/*
 		/////////////1DOF///////////////////////////
-		/*
-		speed_1_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref);
-		speed_2_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref);
-		speed_3_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref);
-		speed_4_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref);
+
+		speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref);
+		speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref);
+		speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref);
+		speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref);
 		*/
 		///////////////SPRAWDZENIE CZY PRĘDKOŚCI MIESZCZĄ SIĘ W ZAKRESIE//////////
 		// Double-check :))
