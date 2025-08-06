@@ -50,9 +50,11 @@
 #define BNO_I2C_HANDLE &hi2c3
 
 #define SAMPLE_TIME 0.01f
+
 #define PID_KP_MIN 18.0f
 #define PID_KP_MAX 25.0f
 #define PID_KI_MIN 2.0f
+
 #define PID_KI_MAX 15.0f
 #define PID_KD_MIN 4.0f
 #define PID_KD_MAX 10.0f
