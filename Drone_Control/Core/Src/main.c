@@ -466,11 +466,11 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 		Kalman_Update(&copter_roll_angle_kal, &copter_pitch_angle_kal, &Roll, &Pitch, acc.x, acc.y, acc.z, gyro.x, gyro.y, gyro.z);
 
 		////////////////DANE Z BNO(ZEWNĘTRZNA FUZJA)///////////////////
-		/*
+
 
 		bno_vector = bno055_getVectorEuler();
-		copter_pitch_angle_bno = bno_vector.y;
-		copter_roll_angle_bno = bno_vector.z;
+		copter_pitch_angle = bno_vector.y;
+		copter_roll_angle = bno_vector.z;
 		copter_yaw_angle = bno_vector.x;
 
 		//////////////////OBLICZANIE WYJŚCIA REGULATORA WYKORZYSTUJĄC ERROR ORAZ REF ANGLE//////////////////
