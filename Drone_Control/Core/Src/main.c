@@ -36,6 +36,7 @@
 #include "bno055_stm32.h"
 #include "U_to_throttle.h"
 #include "imu_fusion.h"
+#include "IMU_kalman.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -123,8 +124,11 @@ volatile float copter_roll_angle;
 volatile float copter_yaw_angle;
 volatile float copter_z_distance;
 
-volatile float copter_pitch_angle_bno;
-volatile float copter_roll_angle_bno;
+volatile float copter_pitch_angle_komp;
+volatile float copter_roll_angle_komp;
+
+volatile float copter_pitch_angle_kal;
+volatile float copter_roll_angle_kal;
 
 
 volatile float copter_yaw_angle_intergral;
@@ -153,6 +157,8 @@ uint32_t UartDebugSoftTimer;
 
 MPU6050_t MPU6050;
 IMU_Angles imu_angles;
+KalmanFilter Roll;
+KalmanFilter Pitch;
 
 volatile uint32_t echo_end = 0;
 volatile uint8_t echo_captured = 0;
@@ -230,6 +236,9 @@ int main(void)
   /* USER CODE BEGIN 2 */
   //MPU6050_Init(&hi2c3);
   //MPU6050_Calibrate_Gyro(&hi2c3, &MPU6050, 500);
+
+  Kalman_Init(&Roll);
+  Kalman_Init(&Pitch);
 
   HAL_TIM_Base_Start(&htim2); //Czas do czujników odległościowych
   HAL_TIM_Base_Start_IT(&htim15); //Timer od częstotliwości regulatora i wysyłania prędkości do drona
@@ -450,8 +459,11 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 		bno055_vector_t acc= bno055_getVectorAccelerometer();
 		bno055_vector_t gyro= bno055_getVectorGyroscope();
 		IMU_Fusion_Update(&imu_angles, acc.x, acc.y, acc.z, gyro.x, gyro.y, SAMPLE_TIME );
-		copter_pitch_angle= imu_angles.pitch;
-		copter_roll_angle = imu_angles.roll;
+
+		copter_pitch_angle_komp = imu_angles.pitch;
+		copter_roll_angle_komp = imu_angles.roll;
+
+		Kalman_Update(&copter_roll_angle_kal, &copter_pitch_angle_kal, &Roll, &Pitch, acc.x, acc.y, acc.z, gyro.x, gyro.y, gyro.z);
 
 		////////////////DANE Z BNO(ZEWNĘTRZNA FUZJA)///////////////////
 		/*
