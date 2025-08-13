@@ -460,6 +460,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 		copter_yaw_angle+=MPU6050.Gz*SAMPLE_TIME;
 		*/
 		////////////////DANE Z BNO(SUROWE+WEWNĘTRZNA FUZJA)//////////
+
 //		bno055_vector_t acc= bno055_getVectorAccelerometer();
 //		bno055_vector_t gyro= bno055_getVectorGyroscope();
 //		IMU_Fusion_Update(&imu_angles, acc.x, acc.y, acc.z, gyro.x, gyro.y, gyro.z, SAMPLE_TIME);
