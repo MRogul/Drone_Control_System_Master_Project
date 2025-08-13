@@ -76,7 +76,7 @@ void Error_Handler(void);
 #define LD3_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
-
+void REF_SIGNAL(volatile uint8_t val);
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

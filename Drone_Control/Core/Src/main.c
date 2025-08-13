@@ -59,17 +59,17 @@
 #define PID_KI_MAX 15.0f
 #define PID_KD_MIN 4.0f
 #define PID_KD_MAX 10.0f
-#define PID_TAU_MIN 0.2f
+#define PID_TAU_MIN 0.12f
 #define PID_TAU_MAX 0.06f
 
 
 #define SPEED_MIN 48
-#define MAX_SPEED 1600
+#define MAX_SPEED 1900
 
-#define SPEED_OFFSET 600.0f
+#define SPEED_OFFSET 700.0f
 #define ADC_TIMEOUT 1   // us
 
-#define speed 100
+#define speed 200
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -93,31 +93,33 @@ PID_t pid_roll;
 PID_t pid_yaw;
 PID_t pid_z;
 
-float kp = 5;
-float ki = 1.8;
-float kd = 28;
+volatile float speed_test=100;
+
+float kp = 4.5;
+float ki = 2.4;
+float kd = 26;
 float tau = PID_TAU_MIN;
 
-float kp_y = 3;
-float ki_y = 2;
-float kd_y = 20;
+float kp_y = 2.4;
+float ki_y = 1.6;
+float kd_y = 12;
 float tau_y = PID_TAU_MIN;
 
-float kp_z = 20;
+float kp_z = 12;
 float ki_z = 5;
-float kd_z = 30;
+float kd_z = 15;
 float tau_z = PID_TAU_MIN;
 
 
 volatile float pid_z_counter=1;
-volatile float ref_signal_counter=-500;
-volatile float num_ref=0;
-volatile float num_ref_prev=0;
+volatile float ref_signal_counter=-1000;
+volatile uint8_t num_ref=0;
+volatile uint8_t num_ref_prev=0;
 
 
 float REF_PITCH_ANGLE= 0.0;
 float REF_ROLL_ANGLE= 0.0;
-float REF_YAW_ANGLE= 180.0;
+float REF_YAW_ANGLE= 100.0;
 float REF_Z_DISTANCE= 10;
 
 ////////////////////////
@@ -254,16 +256,16 @@ int main(void)
 
   // PID controllers
   	PID_Init_Bartek_s_Lab(&pid_pitch, PID_KP_MIN, PID_KI_MIN, PID_KD_MIN,
-  	PID_TAU_MIN, -200.0f, 200.0f, SAMPLE_TIME);
+  	PID_TAU_MIN, -250.0f, 250.0f, SAMPLE_TIME);
 
   	PID_Init_Bartek_s_Lab(&pid_roll, PID_KP_MIN, PID_KI_MIN, PID_KD_MIN,
-  	PID_TAU_MIN, -200.0f, 200.0f, SAMPLE_TIME);
+  	PID_TAU_MIN, -250.0f, 250.0f, SAMPLE_TIME);
 
   	PID_Init_Bartek_s_Lab(&pid_yaw, kp_y, ki_y, kd_y,
   	tau_y, -300.0f, 300.0f, SAMPLE_TIME);
 
   	PID_Init_Bartek_s_Lab(&pid_z, kp_z, ki_z, kd_z,
-  	  	tau_z, -100.0f, 500.0f, SAMPLE_TIME);
+  	  	tau_z, -100.0f, 400.0f, SAMPLE_TIME);
 
   	UartDebugSoftTimer = HAL_GetTick();
 
@@ -271,7 +273,7 @@ int main(void)
 
 	dshot_arm_all_esc();
 
-	//SS=2;
+//	SS=2;
 
 	// AHRS
 		bno055_assignI2C(BNO_I2C_HANDLE);
@@ -471,7 +473,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 		copter_roll_angle = MPU6050.KalmanAngleY;
 		copter_yaw_angle+=MPU6050.Gz*SAMPLE_TIME;
 		*/
-		////////////////DANE Z BNO(SUROWE+WEWNĘTRZNA FUZJA)//////////
+		//////////////DANE Z BNO(SUROWE+WEWNĘTRZNA FUZJA)//////////
 //		bno055_vector_t acc= bno055_getVectorAccelerometer();
 //		bno055_vector_t gyro= bno055_getVectorGyroscope();
 //		IMU_Fusion_Update(&imu_angles, acc.x, acc.y, acc.z, gyro.x, gyro.y, gyro.z, SAMPLE_TIME);
@@ -490,130 +492,139 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 		copter_yaw_angle = bno_vector.x;
 
 		//////////////////OBLICZANIE WYJŚCIA REGULATORA WYKORZYSTUJĄC ERROR ORAZ REF ANGLE//////////////////
-
-		speed_pitch_ref = PID_Controller_Bartek_s_Lab(&pid_pitch,REF_PITCH_ANGLE,
-				copter_pitch_angle);
-		speed_roll_ref = PID_Controller_Bartek_s_Lab(&pid_roll, REF_ROLL_ANGLE,
-				copter_roll_angle);
-		speed_yaw_ref = PID_Controller_Bartek_s_Lab(&pid_yaw, REF_YAW_ANGLE,
-				copter_yaw_angle);
-		speed_z_ref = PID_Controller_Bartek_s_Lab(&pid_z, REF_Z_DISTANCE,
-						copter_z_distance);
+		if(SS==1){
+			speed_pitch_ref = PID_Controller_Bartek_s_Lab(&pid_pitch,REF_PITCH_ANGLE,
+					copter_pitch_angle);
+			speed_roll_ref = PID_Controller_Bartek_s_Lab(&pid_roll, REF_ROLL_ANGLE,
+					copter_roll_angle);
+			speed_yaw_ref = PID_Controller_Bartek_s_Lab(&pid_yaw, REF_YAW_ANGLE,
+					copter_yaw_angle);
 
 
 
-		////////////////3DOF/////////////////////
-
-		if(pid_z_counter!=0){
-			speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
-					+ speed_pitch_ref +speed_yaw_ref);
-			speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
-					- speed_pitch_ref -speed_yaw_ref);
-			speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
-					- speed_pitch_ref +speed_yaw_ref);
-			speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
-					+ speed_pitch_ref -speed_yaw_ref);
-		}
 
 
 
-		////////////////4DOF/////////////////////
-		else {
-			speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
-					+ speed_pitch_ref +speed_yaw_ref+speed_z_ref);
-			speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
-					- speed_pitch_ref -speed_yaw_ref+speed_z_ref);
-			speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
-					- speed_pitch_ref +speed_yaw_ref+speed_z_ref);
-			speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
-					+ speed_pitch_ref -speed_yaw_ref+speed_z_ref);
-		}
+
+			////////////////3DOF/////////////////////
+
+			if(pid_z_counter!=0){
+				speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+						+ speed_pitch_ref +speed_yaw_ref);
+				speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+						- speed_pitch_ref -speed_yaw_ref);
+				speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+						- speed_pitch_ref +speed_yaw_ref);
+				speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+						+ speed_pitch_ref -speed_yaw_ref);
+			}
 
 
-		if (ref_signal_counter=1000){
-			num_ref++;
-			ref_signal_counter=0;
-		}
 
-		////////////////2DOF/////////////////////
-		/*
-		speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
-				+ speed_pitch_ref);
-		speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
-				- speed_pitch_ref);
-		speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
-				- speed_pitch_ref);
-		speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
-				+ speed_pitch_ref);
-*/
+			////////////////4DOF/////////////////////
+			else {
+				speed_z_ref = PID_Controller_Bartek_s_Lab(&pid_z, REF_Z_DISTANCE,
+										copter_z_distance);
 
-		/////////////1DOF///////////////////////////
+				speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+						+ speed_pitch_ref +speed_yaw_ref+speed_z_ref);
+				speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+						- speed_pitch_ref -speed_yaw_ref+speed_z_ref);
+				speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+						- speed_pitch_ref +speed_yaw_ref+speed_z_ref);
+				speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+						+ speed_pitch_ref -speed_yaw_ref+speed_z_ref);
+			}
 
-//		speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref);
-//		speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref);
-//		speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref);
-//		speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref);
 
-		///////////////SPRAWDZENIE CZY PRĘDKOŚCI MIESZCZĄ SIĘ W ZAKRESIE//////////
-		// Double-check :))
-		if (speed_1_ref < 48)
-		{
-			speed_1_ref = 48;
-		}
-		else if (speed_1_ref > MAX_SPEED)
-		{
-			speed_1_ref = MAX_SPEED;
-		}
-		else
-		{
-			__NOP();
-		}
+			if (ref_signal_counter==500){
+				num_ref++;
+				ref_signal_counter=0;
+			}
 
-		if (speed_2_ref < 48)
-		{
-			speed_2_ref = 48;
-		}
-		else if (speed_2_ref > MAX_SPEED)
-		{
-			speed_2_ref = MAX_SPEED;
-		}
-		else
-		{
-			__NOP();
-		}
+			////////////////2DOF/////////////////////
 
-		if (speed_3_ref < 48)
-		{
-			speed_3_ref = 48;
-		}
-		else if (speed_3_ref > MAX_SPEED)
-		{
-			speed_3_ref = MAX_SPEED;
-		}
-		else
-		{
-			__NOP();
-		}
+//			speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+//					+ speed_pitch_ref);
+//			speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+//					- speed_pitch_ref);
+//			speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+//					- speed_pitch_ref);
+//			speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+//					+ speed_pitch_ref);
 
-		if (speed_4_ref < 48)
-		{
-			speed_4_ref = 48;
-		}
-		else if (speed_4_ref > MAX_SPEED)
-		{
-			speed_4_ref = MAX_SPEED;
-		}
-		else
-		{
-			__NOP();
-		}
-		/////////WYSYŁANIE PRĘDKOŚCI DO ESC////////////
-		speeds[0] = speed_1_ref;
-		speeds[1] = speed_2_ref;
-		speeds[2] = speed_3_ref;
-		speeds[3] = speed_4_ref;
-		if (SS==1){
+
+			/////////////1DOF///////////////////////////
+
+//			speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref);
+//			speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref);
+//			speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref);
+//			speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref);
+
+			///////////////SPRAWDZENIE CZY PRĘDKOŚCI MIESZCZĄ SIĘ W ZAKRESIE//////////
+			// Double-check :))
+			if (speed_1_ref < 48)
+			{
+				speed_1_ref = 48;
+			}
+			else if (speed_1_ref > MAX_SPEED)
+			{
+				speed_1_ref = MAX_SPEED;
+			}
+			else
+			{
+				__NOP();
+			}
+
+			if (speed_2_ref < 48)
+			{
+				speed_2_ref = 48;
+			}
+			else if (speed_2_ref > MAX_SPEED)
+			{
+				speed_2_ref = MAX_SPEED;
+			}
+			else
+			{
+				__NOP();
+			}
+
+			if (speed_3_ref < 48)
+			{
+				speed_3_ref = 48;
+			}
+			else if (speed_3_ref > MAX_SPEED)
+			{
+				speed_3_ref = MAX_SPEED;
+			}
+			else
+			{
+				__NOP();
+			}
+
+			if (speed_4_ref < 48)
+			{
+				speed_4_ref = 48;
+			}
+			else if (speed_4_ref > MAX_SPEED)
+			{
+				speed_4_ref = MAX_SPEED;
+			}
+			else
+			{
+				__NOP();
+			}
+			/////////WYSYŁANIE PRĘDKOŚCI DO ESC////////////
+			speeds[0] = speed_1_ref;
+			speeds[1] = speed_2_ref;
+			speeds[2] = speed_3_ref;
+			speeds[3] = speed_4_ref;
 			dshot_send_all_ref_speeds(speeds);
+//			base[0]=speed_test;
+//			base[1]=speed_test;
+//			base[2]=speed_test;
+//			base[3]=speed_test;
+//			dshot_send_all_ref_speeds(base);
 			ref_signal_counter++;
 			if(pid_z_counter<700 && pid_z_counter!=0)
 			{
@@ -624,14 +635,19 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 			}
 
 		}
+
+
+
 		else if (SS==2){
 			__NOP();
 		}
+
+
 		else{
-			base[0]=100;
-			base[1]=100;
-			base[2]=100;
-			base[3]=100;
+			base[0]=200;
+			base[1]=200;
+			base[2]=200;
+			base[3]=200;
 			dshot_send_all_ref_speeds(base);
 		}
 
@@ -687,54 +703,80 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
     }
 }
 
-void REF_SIGNAL (volatile float num){
+void REF_SIGNAL(volatile uint8_t num){
 	switch (num){
 	case 0:
 		REF_PITCH_ANGLE= 0.0;
 		REF_ROLL_ANGLE= 0.0;
 		REF_YAW_ANGLE= 100.0;
 		REF_Z_DISTANCE= 10;
+		break;
 	case 1:
 		REF_PITCH_ANGLE= 0.0;
 		REF_ROLL_ANGLE= 0.0;
 		REF_YAW_ANGLE= 100.0;
 		REF_Z_DISTANCE= 20;
+		break;
 	case 2:
 		REF_PITCH_ANGLE= 0.0;
 		REF_ROLL_ANGLE= 0.0;
 		REF_YAW_ANGLE= 100.0;
 		REF_Z_DISTANCE= 10;
+		break;
 	case 3:
 		REF_PITCH_ANGLE= 0.0;
 		REF_ROLL_ANGLE= 0.0;
 		REF_YAW_ANGLE= 200.0;
 		REF_Z_DISTANCE= 10;
+		break;
 	case 4:
 		REF_PITCH_ANGLE= 0.0;
 		REF_ROLL_ANGLE= 0.0;
 		REF_YAW_ANGLE= 100.0;
 		REF_Z_DISTANCE= 10;
+		break;
 	case 5:
 		REF_PITCH_ANGLE= 10.0;
 		REF_ROLL_ANGLE= 0.0;
 		REF_YAW_ANGLE= 100.0;
 		REF_Z_DISTANCE= 10;
+		break;
 	case 6:
-		REF_PITCH_ANGLE= 0.0;
+		REF_PITCH_ANGLE= -10.0;
 		REF_ROLL_ANGLE= 0.0;
 		REF_YAW_ANGLE= 100.0;
 		REF_Z_DISTANCE= 10;
+		break;
 	case 7:
 		REF_PITCH_ANGLE= 0.0;
 		REF_ROLL_ANGLE= 10.0;
 		REF_YAW_ANGLE= 100.0;
 		REF_Z_DISTANCE= 10;
+		break;
 	case 8:
+		REF_PITCH_ANGLE= 0.0;
+		REF_ROLL_ANGLE= -10.0;
+		REF_YAW_ANGLE= 100.0;
+		REF_Z_DISTANCE= 10;
+		break;
+	case 9:
 		REF_PITCH_ANGLE= 0.0;
 		REF_ROLL_ANGLE= 0.0;
 		REF_YAW_ANGLE= 100.0;
 		REF_Z_DISTANCE= 10;
+		break;
+	case 10:
+		REF_PITCH_ANGLE= 0.0;
+		REF_ROLL_ANGLE= 0.0;
+		REF_YAW_ANGLE= 100.0;
+		REF_Z_DISTANCE= 3;
+		break;
+	case 11:
+		SS=0;
+		break;
 	default:
+		num_ref=12;
+		num_ref_prev=12;
 		break;
 	}
 }
