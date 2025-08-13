@@ -107,7 +107,12 @@ float kp_z = 20;
 float ki_z = 5;
 float kd_z = 30;
 float tau_z = PID_TAU_MIN;
+
+
 volatile float pid_z_counter=1;
+volatile float ref_signal_counter=-500;
+volatile float num_ref=0;
+volatile float num_ref_prev=0;
 
 
 float REF_PITCH_ANGLE= 0.0;
@@ -347,6 +352,13 @@ int main(void)
 		PID_Controller_Update_Gains(&pid_roll, kp, ki, kd, tau);
 		PID_Controller_Update_Gains(&pid_yaw, kp_y, ki_y, kd_y, tau_y);
 		PID_Controller_Update_Gains(&pid_z, kp_z, ki_z, kd_z, tau_z);
+		if (num_ref!=num_ref_prev){
+			REF_SIGNAL(num_ref);
+			num_ref_prev=num_ref;
+		}
+
+
+
 
 		//dshot_send_all_ref_speeds(speed_ref);
 		/*
@@ -460,7 +472,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 		copter_yaw_angle+=MPU6050.Gz*SAMPLE_TIME;
 		*/
 		////////////////DANE Z BNO(SUROWE+WEWNĘTRZNA FUZJA)//////////
-
 //		bno055_vector_t acc= bno055_getVectorAccelerometer();
 //		bno055_vector_t gyro= bno055_getVectorGyroscope();
 //		IMU_Fusion_Update(&imu_angles, acc.x, acc.y, acc.z, gyro.x, gyro.y, gyro.z, SAMPLE_TIME);
@@ -519,6 +530,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 		}
 
 
+		if (ref_signal_counter=1000){
+			num_ref++;
+			ref_signal_counter=0;
+		}
 
 		////////////////2DOF/////////////////////
 		/*
@@ -599,8 +614,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 		speeds[3] = speed_4_ref;
 		if (SS==1){
 			dshot_send_all_ref_speeds(speeds);
-
-			if(pid_z_counter<1000 && pid_z_counter!=0)
+			ref_signal_counter++;
+			if(pid_z_counter<700 && pid_z_counter!=0)
 			{
 				pid_z_counter++;
 			}
@@ -670,6 +685,58 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
             echo_start_flag = 0;
         }
     }
+}
+
+void REF_SIGNAL (volatile float num){
+	switch (num){
+	case 0:
+		REF_PITCH_ANGLE= 0.0;
+		REF_ROLL_ANGLE= 0.0;
+		REF_YAW_ANGLE= 100.0;
+		REF_Z_DISTANCE= 10;
+	case 1:
+		REF_PITCH_ANGLE= 0.0;
+		REF_ROLL_ANGLE= 0.0;
+		REF_YAW_ANGLE= 100.0;
+		REF_Z_DISTANCE= 20;
+	case 2:
+		REF_PITCH_ANGLE= 0.0;
+		REF_ROLL_ANGLE= 0.0;
+		REF_YAW_ANGLE= 100.0;
+		REF_Z_DISTANCE= 10;
+	case 3:
+		REF_PITCH_ANGLE= 0.0;
+		REF_ROLL_ANGLE= 0.0;
+		REF_YAW_ANGLE= 200.0;
+		REF_Z_DISTANCE= 10;
+	case 4:
+		REF_PITCH_ANGLE= 0.0;
+		REF_ROLL_ANGLE= 0.0;
+		REF_YAW_ANGLE= 100.0;
+		REF_Z_DISTANCE= 10;
+	case 5:
+		REF_PITCH_ANGLE= 10.0;
+		REF_ROLL_ANGLE= 0.0;
+		REF_YAW_ANGLE= 100.0;
+		REF_Z_DISTANCE= 10;
+	case 6:
+		REF_PITCH_ANGLE= 0.0;
+		REF_ROLL_ANGLE= 0.0;
+		REF_YAW_ANGLE= 100.0;
+		REF_Z_DISTANCE= 10;
+	case 7:
+		REF_PITCH_ANGLE= 0.0;
+		REF_ROLL_ANGLE= 10.0;
+		REF_YAW_ANGLE= 100.0;
+		REF_Z_DISTANCE= 10;
+	case 8:
+		REF_PITCH_ANGLE= 0.0;
+		REF_ROLL_ANGLE= 0.0;
+		REF_YAW_ANGLE= 100.0;
+		REF_Z_DISTANCE= 10;
+	default:
+		break;
+	}
 }
 /* USER CODE END 4 */
 
