@@ -101,10 +101,10 @@ void dshot_arm_all_esc(void)
 {
     for (int i = 0; i < 1000; i++)
     {
-        for (uint8_t motor = 0; motor < NUM_MOTORS; motor++)
-        {
-            dshot_send_motor(motor, 0);
-        }
+    	dshot_send_motor(0,0);
+    	dshot_send_motor(1, 0);
+    	dshot_send_motor(2, 0);
+    	dshot_send_motor(3, 0);
         HAL_Delay(5);
     }
 
