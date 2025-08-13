@@ -36,6 +36,7 @@
 #include "bno055_stm32.h"
 #include "U_to_throttle.h"
 #include "imu_fusion.h"
+#include "IMU_kalman.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -65,7 +66,7 @@
 #define SPEED_MIN 48
 #define MAX_SPEED 1600
 
-#define SPEED_OFFSET 500.0f
+#define SPEED_OFFSET 600.0f
 #define ADC_TIMEOUT 1   // us
 
 #define speed 100
@@ -92,20 +93,22 @@ PID_t pid_roll;
 PID_t pid_yaw;
 PID_t pid_z;
 
-float kp = 5.2;
+float kp = 5;
 float ki = 1.8;
-float kd = 20;
+float kd = 28;
 float tau = PID_TAU_MIN;
 
-float kp_y = 2.8;
-float ki_y = 0.1;
-float kd_y = 10;
+float kp_y = 3;
+float ki_y = 2;
+float kd_y = 20;
 float tau_y = PID_TAU_MIN;
 
-float kp_z = 1;
-float ki_z = 1;
-float kd_z = 0.1;
+float kp_z = 20;
+float ki_z = 5;
+float kd_z = 30;
 float tau_z = PID_TAU_MIN;
+volatile float pid_z_counter=1;
+
 
 float REF_PITCH_ANGLE= 0.0;
 float REF_ROLL_ANGLE= 0.0;
@@ -123,8 +126,11 @@ volatile float copter_roll_angle;
 volatile float copter_yaw_angle;
 volatile float copter_z_distance;
 
-volatile float copter_pitch_angle_bno;
-volatile float copter_roll_angle_bno;
+volatile float copter_pitch_angle_komp;
+volatile float copter_roll_angle_komp;
+
+volatile float copter_pitch_angle_kal;
+volatile float copter_roll_angle_kal;
 
 
 volatile float copter_yaw_angle_intergral;
@@ -153,6 +159,8 @@ uint32_t UartDebugSoftTimer;
 
 MPU6050_t MPU6050;
 IMU_Angles imu_angles;
+KalmanFilter Roll;
+KalmanFilter Pitch;
 
 volatile uint32_t echo_end = 0;
 volatile uint8_t echo_captured = 0;
@@ -231,6 +239,9 @@ int main(void)
   //MPU6050_Init(&hi2c3);
   //MPU6050_Calibrate_Gyro(&hi2c3, &MPU6050, 500);
 
+  Kalman_Init(&Roll);
+  Kalman_Init(&Pitch);
+
   HAL_TIM_Base_Start(&htim2); //Czas do czujników odległościowych
   HAL_TIM_Base_Start_IT(&htim15); //Timer od częstotliwości regulatora i wysyłania prędkości do drona
   HAL_TIM_Base_Start_IT(&htim1); // control loop interrupt
@@ -247,13 +258,15 @@ int main(void)
   	tau_y, -300.0f, 300.0f, SAMPLE_TIME);
 
   	PID_Init_Bartek_s_Lab(&pid_z, kp_z, ki_z, kd_z,
-  	  	tau_z, -100.0f, 400.0f, SAMPLE_TIME);
+  	  	tau_z, -100.0f, 500.0f, SAMPLE_TIME);
 
   	UartDebugSoftTimer = HAL_GetTick();
 
 	HAL_Delay(2000); // let the motor stop after uC RST
 
 	dshot_arm_all_esc();
+
+	//SS=2;
 
 	// AHRS
 		bno055_assignI2C(BNO_I2C_HANDLE);
@@ -447,18 +460,21 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 		copter_yaw_angle+=MPU6050.Gz*SAMPLE_TIME;
 		*/
 		////////////////DANE Z BNO(SUROWE+WEWNĘTRZNA FUZJA)//////////
-		bno055_vector_t acc= bno055_getVectorAccelerometer();
-		bno055_vector_t gyro= bno055_getVectorGyroscope();
-		IMU_Fusion_Update(&imu_angles, acc.x, acc.y, acc.z, gyro.x, gyro.y, SAMPLE_TIME );
-		copter_pitch_angle= imu_angles.pitch;
-		copter_roll_angle = imu_angles.roll;
+//		bno055_vector_t acc= bno055_getVectorAccelerometer();
+//		bno055_vector_t gyro= bno055_getVectorGyroscope();
+//		IMU_Fusion_Update(&imu_angles, acc.x, acc.y, acc.z, gyro.x, gyro.y, gyro.z, SAMPLE_TIME);
+//
+//		copter_pitch_angle_komp = -imu_angles.pitch;
+//		copter_roll_angle_komp = -imu_angles.roll;
+//
+//		Kalman_Update(&copter_roll_angle_kal, &copter_pitch_angle_kal, &Roll, &Pitch, acc.x, acc.y, acc.z, gyro.x, gyro.y, gyro.z);
 
 		////////////////DANE Z BNO(ZEWNĘTRZNA FUZJA)///////////////////
-		/*
+
 
 		bno_vector = bno055_getVectorEuler();
-		copter_pitch_angle_bno = bno_vector.y;
-		copter_roll_angle_bno = bno_vector.z;
+		copter_pitch_angle = bno_vector.y;
+		copter_roll_angle = bno_vector.z;
 		copter_yaw_angle = bno_vector.x;
 
 		//////////////////OBLICZANIE WYJŚCIA REGULATORA WYKORZYSTUJĄC ERROR ORAZ REF ANGLE//////////////////
@@ -473,29 +489,36 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 						copter_z_distance);
 
 
-		////////////////4DOF/////////////////////
-
-		speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
-				+ speed_pitch_ref +speed_yaw_ref+speed_z_ref);
-		speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
-				- speed_pitch_ref -speed_yaw_ref+speed_z_ref);
-		speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
-				- speed_pitch_ref +speed_yaw_ref+speed_z_ref);
-		speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
-				+ speed_pitch_ref -speed_yaw_ref+speed_z_ref);
 
 		////////////////3DOF/////////////////////
 
-		/*
-		speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
-				+ speed_pitch_ref +speed_yaw_ref);
-		speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
-				- speed_pitch_ref -speed_yaw_ref);
-		speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
-				- speed_pitch_ref +speed_yaw_ref);
-		speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
-				+ speed_pitch_ref -speed_yaw_ref);
-*/
+		if(pid_z_counter!=0){
+			speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+					+ speed_pitch_ref +speed_yaw_ref);
+			speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+					- speed_pitch_ref -speed_yaw_ref);
+			speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+					- speed_pitch_ref +speed_yaw_ref);
+			speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+					+ speed_pitch_ref -speed_yaw_ref);
+		}
+
+
+
+		////////////////4DOF/////////////////////
+		else {
+			speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+					+ speed_pitch_ref +speed_yaw_ref+speed_z_ref);
+			speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+					- speed_pitch_ref -speed_yaw_ref+speed_z_ref);
+			speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+					- speed_pitch_ref +speed_yaw_ref+speed_z_ref);
+			speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+					+ speed_pitch_ref -speed_yaw_ref+speed_z_ref);
+		}
+
+
+
 		////////////////2DOF/////////////////////
 		/*
 		speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
@@ -507,14 +530,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 		speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
 				+ speed_pitch_ref);
 */
-	/*
+
 		/////////////1DOF///////////////////////////
 
-		speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref);
-		speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref);
-		speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref);
-		speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref);
-		*/
+//		speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref);
+//		speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref);
+//		speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref);
+//		speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref);
+
 		///////////////SPRAWDZENIE CZY PRĘDKOŚCI MIESZCZĄ SIĘ W ZAKRESIE//////////
 		// Double-check :))
 		if (speed_1_ref < 48)
@@ -575,6 +598,18 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 		speeds[3] = speed_4_ref;
 		if (SS==1){
 			dshot_send_all_ref_speeds(speeds);
+
+			if(pid_z_counter<1000 && pid_z_counter!=0)
+			{
+				pid_z_counter++;
+			}
+			else{
+				pid_z_counter=0;
+			}
+
+		}
+		else if (SS==2){
+			__NOP();
 		}
 		else{
 			base[0]=100;
