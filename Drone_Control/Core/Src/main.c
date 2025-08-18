@@ -501,11 +501,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 					copter_yaw_angle);
 
 
-
-
-
-
-
 			////////////////3DOF/////////////////////
 
 			if(pid_z_counter!=0){
