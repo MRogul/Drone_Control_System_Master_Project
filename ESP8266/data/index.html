@@ -12,6 +12,7 @@
     </div>
     <div class="content">
     <div class="card-grid">
+        <!-- PID Sliders -->
         <div class="card">
             <p class="card-title">Kp</p>
             <p class="switch">
@@ -39,6 +40,36 @@
                 <input type="range" onchange="updateSliderPWM(this)" id="slider4" min="0" max="100" step="1" value="0" class="slider">
             </p>
             <p class="state"><span id="sliderValue4"></span>%</p>
+        </div>
+        
+        <!-- New Sliders - Roll, Pitch, Yaw, Z -->
+        <div class="card">
+            <p class="card-title">Roll</p>
+            <p class="switch">
+                <input type="range" onchange="updateSliderPWM(this)" id="slider5" min="0" max="100" step="1" value="0" class="slider">
+            </p>
+            <p class="state"><span id="sliderValue5"></span>%</p>
+        </div>
+        <div class="card">
+            <p class="card-title">Pitch</p>
+            <p class="switch">
+                <input type="range" onchange="updateSliderPWM(this)" id="slider6" min="0" max="100" step="1" value="0" class="slider">
+            </p>
+            <p class="state"><span id="sliderValue6"></span>%</p>
+        </div>
+        <div class="card">
+            <p class="card-title">Yaw</p>
+            <p class="switch">
+                <input type="range" onchange="updateSliderPWM(this)" id="slider7" min="0" max="100" step="1" value="0" class="slider">
+            </p>
+            <p class="state"><span id="sliderValue7"></span>%</p>
+        </div>
+        <div class="card">
+            <p class="card-title">Z</p>
+            <p class="switch">
+                <input type="range" onchange="updateSliderPWM(this)" id="slider8" min="0" max="100" step="1" value="0" class="slider">
+            </p>
+            <p class="state"><span id="sliderValue8"></span>%</p>
         </div>
     </div>
 </div>

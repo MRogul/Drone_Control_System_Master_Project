@@ -46,7 +46,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define ESP32_UART_HANDLE &huart1
+#define ESP32_UART_HANDLE &huart2
 #define ESP32_MSG_LENGTH 6
 #define BNO_I2C_HANDLE &hi2c3
 
@@ -62,6 +62,19 @@
 #define PID_TAU_MIN 0.12f
 #define PID_TAU_MAX 0.06f
 
+#define ROLL_REF_MIN -15.0f
+#define ROLL_REF_MAX 15.0f
+
+#define PITCH_REF_MIN -15.0f
+#define PITCH_REF_MAX 15.0f
+
+#define YAW_REF_MIN 100.0f
+#define YAW_REF_MAX 200.0f
+
+#define Z_REF_MIN 3.0f
+#define Z_REF_MAX 20.0f
+
+#define YAW_BIAS 150.0f
 
 #define SPEED_MIN 48
 #define MAX_SPEED 1900
@@ -93,7 +106,7 @@ PID_t pid_roll;
 PID_t pid_yaw;
 PID_t pid_z;
 
-volatile float speed_test=100;
+volatile float speed_test=80;
 
 float kp = 4.5;
 float ki = 2.4;
@@ -187,17 +200,7 @@ void HCSR04_Trigger(void);
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-#ifdef __GNUC__
-#define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
-#else
-#define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
-#endif
 
-PUTCHAR_PROTOTYPE
-{
-  HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
-  return ch;
-}
 
 /* USER CODE END PFP */
 
@@ -255,11 +258,11 @@ int main(void)
 
 
   // PID controllers
-  	PID_Init_Bartek_s_Lab(&pid_pitch, PID_KP_MIN, PID_KI_MIN, PID_KD_MIN,
-  	PID_TAU_MIN, -250.0f, 250.0f, SAMPLE_TIME);
+  	PID_Init_Bartek_s_Lab(&pid_pitch, kp, ki, kd,
+  	tau, -250.0f, 250.0f, SAMPLE_TIME);
 
-  	PID_Init_Bartek_s_Lab(&pid_roll, PID_KP_MIN, PID_KI_MIN, PID_KD_MIN,
-  	PID_TAU_MIN, -250.0f, 250.0f, SAMPLE_TIME);
+  	PID_Init_Bartek_s_Lab(&pid_roll, kp, ki, kd,
+  	tau, -250.0f, 250.0f, SAMPLE_TIME);
 
   	PID_Init_Bartek_s_Lab(&pid_yaw, kp_y, ki_y, kd_y,
   	tau_y, -300.0f, 300.0f, SAMPLE_TIME);
@@ -289,19 +292,6 @@ int main(void)
   	HAL_UART_Receive_IT(ESP32_UART_HANDLE, rx_esp32_data,ESP32_MSG_LENGTH); // uruchamia odbieranie danych przez UART w trybie przerwań. Kiedy dane przyjdą, zostanie wywołane HAL_UART_RxCpltCallback.
 	while (1)
 	{
-		/*
-		if (HAL_GetTick() - last_trigger > 60) { // max 15 Hz
-		        last_trigger = HAL_GetTick();
-		        HCSR04_Trigger();
-		}
-
-		if (echo_captured) {
-		    echo_captured = 0;
-		    uint32_t diff = (echo_end >= echo_start) ? (echo_end - echo_start) : (0xFFFF - echo_start + echo_end);
-		    distance_cm = diff * 0.0343f / 2.0f; // 343 m/s → 0.0343 cm/µs
-		    printf("Dystans: %.2f cm\n", distance_cm);
-		}
-		*/
 
 		if (white_button_flag == 1)
 		{
@@ -337,6 +327,26 @@ int main(void)
 							+ (PID_TAU_MAX - PID_TAU_MIN) * rx_esp32_data[1]
 									/ 100;
 					break;
+				case 0x05: // roll_ref
+					REF_ROLL_ANGLE = ROLL_REF_MIN
+							+ (ROLL_REF_MAX - ROLL_REF_MIN) * rx_esp32_data[1]
+									/ 100;
+					break;
+				case 0x06: // pitch_ref
+					REF_PITCH_ANGLE = PITCH_REF_MIN
+							+ (PITCH_REF_MAX - PITCH_REF_MIN) * rx_esp32_data[1]
+									/ 100;
+					break;
+				case 0x07: // yaw_ref
+					REF_YAW_ANGLE = YAW_REF_MIN
+							+ (YAW_REF_MAX - YAW_REF_MIN) * rx_esp32_data[1]
+									/ 100;
+					break;
+				case 0x08: // z_ref
+					REF_Z_DISTANCE = Z_REF_MIN
+							+ (Z_REF_MAX - Z_REF_MIN) * rx_esp32_data[1]
+									/ 100;
+					break;
 				default:
 					;
 				}
@@ -350,34 +360,15 @@ int main(void)
 
 		}
 
-		PID_Controller_Update_Gains(&pid_pitch, kp, ki, kd, tau);
-		PID_Controller_Update_Gains(&pid_roll, kp, ki, kd, tau);
-		PID_Controller_Update_Gains(&pid_yaw, kp_y, ki_y, kd_y, tau_y);
-		PID_Controller_Update_Gains(&pid_z, kp_z, ki_z, kd_z, tau_z);
-		if (num_ref!=num_ref_prev){
-			REF_SIGNAL(num_ref);
-			num_ref_prev=num_ref;
-		}
+//		PID_Controller_Update_Gains(&pid_pitch, kp, ki, kd, tau);
+//		PID_Controller_Update_Gains(&pid_roll, kp, ki, kd, tau);
+//		PID_Controller_Update_Gains(&pid_yaw, kp_y, ki_y, kd_y, tau_y);
+//		PID_Controller_Update_Gains(&pid_z, kp_z, ki_z, kd_z, tau_z);
+//		if (num_ref!=num_ref_prev){
+//			REF_SIGNAL(num_ref);
+//			num_ref_prev=num_ref;
+//		}
 
-
-
-
-		//dshot_send_all_ref_speeds(speed_ref);
-		/*
-		kali[0]= MPU6050.Accel_X_RAW;
-		kali[1]= MPU6050.Accel_Y_RAW;
-		kali[2]= MPU6050.Accel_Z_RAW;
-
-		ToDrone[0]=0;
-		ToDrone[1]=0;
-		ToDrone[2]=0;
-
-		for (int i=0; i<3;i++){
-			for(int j=0; j<3; j++){
-				ToDrone[i]+=R[i][j]*kali[j];
-			}
-		}
-		*/
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -474,21 +465,21 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 		copter_yaw_angle+=MPU6050.Gz*SAMPLE_TIME;
 		*/
 		//////////////DANE Z BNO(SUROWE+WEWNĘTRZNA FUZJA)//////////
-//		bno055_vector_t acc= bno055_getVectorAccelerometer();
-//		bno055_vector_t gyro= bno055_getVectorGyroscope();
-//		IMU_Fusion_Update(&imu_angles, acc.x, acc.y, acc.z, gyro.x, gyro.y, gyro.z, SAMPLE_TIME);
-//
-//		copter_pitch_angle_komp = -imu_angles.pitch;
-//		copter_roll_angle_komp = -imu_angles.roll;
-//
-//		Kalman_Update(&copter_roll_angle_kal, &copter_pitch_angle_kal, &Roll, &Pitch, acc.x, acc.y, acc.z, gyro.x, gyro.y, gyro.z);
+		bno055_vector_t acc= bno055_getVectorAccelerometer();
+		bno055_vector_t gyro= bno055_getVectorGyroscope();
+		IMU_Fusion_Update(&imu_angles, acc.x, acc.y, acc.z, gyro.x, gyro.y, gyro.z, SAMPLE_TIME);
+
+		copter_pitch_angle_komp = -imu_angles.pitch;
+		copter_roll_angle_komp = -imu_angles.roll;
+
+		Kalman_Update(&copter_roll_angle_kal, &copter_pitch_angle_kal, &Roll, &Pitch, acc.x, acc.y, acc.z, gyro.x, gyro.y, gyro.z);
 
 		////////////////DANE Z BNO(ZEWNĘTRZNA FUZJA)///////////////////
 
 
 		bno_vector = bno055_getVectorEuler();
-		copter_pitch_angle = bno_vector.y;
-		copter_roll_angle = bno_vector.z;
+		copter_pitch_angle = copter_pitch_angle_komp;
+		copter_roll_angle = copter_roll_angle_komp;
 		copter_yaw_angle = bno_vector.x;
 
 		//////////////////OBLICZANIE WYJŚCIA REGULATORA WYKORZYSTUJĄC ERROR ORAZ REF ANGLE//////////////////
@@ -668,7 +659,7 @@ uint8_t compute_crc8(uint8_t *data, uint8_t length) {
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-	if (huart->Instance == USART1)
+	if (huart->Instance == USART2)
 	{
 		esp32_data_received_flag = 1;
 		HAL_UART_Receive_IT(huart, rx_esp32_data, ESP32_MSG_LENGTH);

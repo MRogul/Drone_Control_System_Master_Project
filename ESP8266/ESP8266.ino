@@ -16,11 +16,20 @@ String sliderValue1 = "0";
 String sliderValue2 = "0";
 String sliderValue3 = "0";
 String sliderValue4 = "0";
+String sliderValue5 = "0";
+String sliderValue6 = "0";
+String sliderValue7 = "0";
+String sliderValue8 = "0";
+
 
 int kp_percentage;
 int ki_percentage;
 int kd_percentage;
 int tau_percentage;
+int roll_ref_percentage;
+int pitch_ref_percentage;
+int yaw_ref_percentage;
+int z_ref_percentage;
 
 const char* ssid = "ESP8266-Access-Point";
 const char* password = "123456789";
@@ -32,6 +41,10 @@ String getSliderValues() {
   sliderValues["sliderValue2"] = sliderValue2;
   sliderValues["sliderValue3"] = sliderValue3;
   sliderValues["sliderValue4"] = sliderValue4;
+  sliderValues["sliderValue5"] = sliderValue5;
+  sliderValues["sliderValue6"] = sliderValue6;
+  sliderValues["sliderValue7"] = sliderValue7;
+  sliderValues["sliderValue8"] = sliderValue8;
   return JSON.stringify(sliderValues);
 }
 
@@ -79,7 +92,9 @@ void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
     message = (char*)data;
     
     if (message.indexOf("1s") >= 0 || message.indexOf("2s") >= 0 || 
-        message.indexOf("3s") >= 0 || message.indexOf("4s") >= 0) {
+        message.indexOf("3s") >= 0 || message.indexOf("4s") >= 0 ||
+        message.indexOf("5s") >= 0 || message.indexOf("6s") >= 0 || 
+        message.indexOf("7s") >= 0 || message.indexOf("8s") >= 0) {
       
       if (message.indexOf("1s") >= 0) {
         sliderValue1 = message.substring(2);
@@ -104,6 +119,30 @@ void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
         tau_percentage = sliderValue4.toInt();
         uart_msg[0] = 0x04;
         memcpy(uart_msg + 1, (char*)&tau_percentage, 4);
+      }
+      else if (message.indexOf("5s") >= 0) {
+        sliderValue5 = message.substring(2);
+        roll_ref_percentage = sliderValue5.toInt();
+        uart_msg[0] = 0x05;
+        memcpy(uart_msg + 1, (char*)&roll_ref_percentage, 4);
+      }
+      else if (message.indexOf("6s") >= 0) {
+        sliderValue6 = message.substring(2);
+        pitch_ref_percentage = sliderValue6.toInt();
+        uart_msg[0] = 0x06;
+        memcpy(uart_msg + 1, (char*)&pitch_ref_percentage, 4);
+      }
+      else if (message.indexOf("7s") >= 0) {
+        sliderValue7 = message.substring(2);
+        yaw_ref_percentage = sliderValue7.toInt();
+        uart_msg[0] = 0x07;
+        memcpy(uart_msg + 1, (char*)&yaw_ref_percentage, 4);
+      }
+      else if (message.indexOf("8s") >= 0) {
+        sliderValue8 = message.substring(2);
+        z_ref_percentage = sliderValue8.toInt();
+        uart_msg[0] = 0x08;
+        memcpy(uart_msg + 1, (char*)&z_ref_percentage, 4);
       }
 
       uart_msg[5] = crc8(uart_msg, 5);
