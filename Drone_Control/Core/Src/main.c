@@ -52,15 +52,14 @@
 
 #define SAMPLE_TIME 0.01f
 
-#define PID_KP_MIN 18.0f
-#define PID_KP_MAX 25.0f
-#define PID_KI_MIN 2.0f
-
-#define PID_KI_MAX 15.0f
+#define PID_KP_MIN 4.0f
+#define PID_KP_MAX 12.0f
+#define PID_KI_MIN 0.1f
+#define PID_KI_MAX 5.0f
 #define PID_KD_MIN 4.0f
-#define PID_KD_MAX 10.0f
-#define PID_TAU_MIN 0.12f
-#define PID_TAU_MAX 0.06f
+#define PID_KD_MAX 20.0f
+#define PID_TAU_MIN 0.1f
+#define PID_TAU_MAX 0.2f
 
 #define ROLL_REF_MIN -15.0f
 #define ROLL_REF_MAX 15.0f
@@ -79,10 +78,10 @@
 #define SPEED_MIN 48
 #define MAX_SPEED 1900
 
-#define SPEED_OFFSET 700.0f
+#define SPEED_OFFSET 750.0f
 #define ADC_TIMEOUT 1   // us
 
-#define speed 200
+#define speed 100
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -109,19 +108,19 @@ PID_t pid_z;
 volatile float speed_test=80;
 
 float kp = 4.5;
-float ki = 2.4;
-float kd = 26;
-float tau = PID_TAU_MIN;
+float ki = 2.6;
+float kd = 14;
+float tau = 0.09;
 
-float kp_y = 2.4;
-float ki_y = 1.6;
+float kp_y = 5;
+float ki_y = 1.5;
 float kd_y = 12;
-float tau_y = PID_TAU_MIN;
+float tau_y = 0.1;
 
-float kp_z = 12;
-float ki_z = 5;
-float kd_z = 15;
-float tau_z = PID_TAU_MIN;
+float kp_z = 22;
+float ki_z = 6;
+float kd_z = 8;
+float tau_z = 0.1;
 
 
 volatile float pid_z_counter=1;
@@ -134,6 +133,22 @@ float REF_PITCH_ANGLE= 0.0;
 float REF_ROLL_ANGLE= 0.0;
 float REF_YAW_ANGLE= 100.0;
 float REF_Z_DISTANCE= 10;
+
+static const float ref_signals[][4] = {
+    // pitch, roll, yaw, z
+    [0] = {0.0, 0.0, 100.0, 10.0},
+    [1] = {0.0, 0.0, 100.0, 20.0},
+    [2] = {0.0, 0.0, 100.0, 10.0},
+    [3] = {0.0, 0.0, 200.0, 10.0},
+    [4] = {0.0, 0.0, 100.0, 10.0},
+    [5] = {10.0, 0.0, 100.0, 10.0},
+    [6] = {-10.0, 0.0, 100.0, 10.0},
+    [7] = {0.0, 10.0, 100.0, 10.0},
+    [8] = {0.0, -10.0, 100.0, 10.0},
+    [9] = {0.0, 0.0, 100.0, 10.0},
+    [10] = {0.0, 0.0, 100.0, 3.0},
+    [11] = {0.0, 0.0, 100.0, 10.0},
+};
 
 ////////////////////////
 float echo_start_flag=0;
@@ -186,14 +201,8 @@ volatile uint32_t echo_end = 0;
 volatile uint8_t echo_captured = 0;
 volatile uint32_t last_trigger = 0;
 float distance_cm=0;
-float gyro_z_offset = 0;
 
-float R[3][3] = {
-		{0.9191, 0.3896, -0.0455},
-		   {-0.3900, 0.9200, 0},
-		    {0.0419, 0.0177, 0.9990}
-};
-float ToDrone[3]={0,0,0};
+
 void HCSR04_Trigger(void);
 /* USER CODE END PV */
 
@@ -201,7 +210,9 @@ void HCSR04_Trigger(void);
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 
-
+/* USER CODE BEGIN PFP */
+uint8_t compute_crc8(const uint8_t *data, uint8_t length);
+/* USER CODE END PFP */
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -268,7 +279,7 @@ int main(void)
   	tau_y, -300.0f, 300.0f, SAMPLE_TIME);
 
   	PID_Init_Bartek_s_Lab(&pid_z, kp_z, ki_z, kd_z,
-  	  	tau_z, -100.0f, 400.0f, SAMPLE_TIME);
+  	  	tau_z, -150.0f, 400.0f, SAMPLE_TIME);
 
   	UartDebugSoftTimer = HAL_GetTick();
 
@@ -301,8 +312,9 @@ int main(void)
 		if (esp32_data_received_flag == 1)
 		{
 			esp32_data_received_flag = 0;
-			calculated_crc = HAL_CRC_Calculate(&hcrc, (uint32_t*) rx_esp32_data,
-					(uint32_t) 6); //Liczenie CRC8 z SAEJ1850 standardu (0x1D poli oraz 0xFF ini)
+//			calculated_crc = HAL_CRC_Calculate(&hcrc, (uint32_t*) rx_esp32_data,
+//					(uint32_t) 6); //Liczenie CRC8 z SAEJ1850 standardu (0x1D poli oraz 0xFF ini)
+			calculated_crc = compute_crc8(rx_esp32_data, 6);
 			if (calculated_crc == 0)
 			{
 				switch (rx_esp32_data[0])
@@ -478,8 +490,11 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 
 
 		bno_vector = bno055_getVectorEuler();
-		copter_pitch_angle = copter_pitch_angle_komp;
-		copter_roll_angle = copter_roll_angle_komp;
+//		copter_pitch_angle = copter_pitch_angle_komp;
+//		copter_roll_angle = copter_roll_angle_komp;
+
+		copter_pitch_angle = bno_vector.y;
+		copter_roll_angle = bno_vector.z;
 		copter_yaw_angle = bno_vector.x;
 
 		//////////////////OBLICZANIE WYJŚCIA REGULATORA WYKORZYSTUJĄC ERROR ORAZ REF ANGLE//////////////////
@@ -504,10 +519,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 				speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
 						+ speed_pitch_ref -speed_yaw_ref);
 			}
-
-
-
-			////////////////4DOF/////////////////////
+//
+//
+//
+//			////////////////4DOF/////////////////////
 			else {
 				speed_z_ref = PID_Controller_Bartek_s_Lab(&pid_z, REF_Z_DISTANCE,
 										copter_z_distance);
@@ -522,7 +537,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 						+ speed_pitch_ref -speed_yaw_ref+speed_z_ref);
 			}
 
-
+//
 			if (ref_signal_counter==500){
 				num_ref++;
 				ref_signal_counter=0;
@@ -605,7 +620,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 			speeds[1] = speed_2_ref;
 			speeds[2] = speed_3_ref;
 			speeds[3] = speed_4_ref;
-			dshot_send_all_ref_speeds(speeds);
+//			dshot_send_all_ref_speeds(speeds);
 //			base[0]=speed_test;
 //			base[1]=speed_test;
 //			base[2]=speed_test;
@@ -640,7 +655,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 	}
 }
 
-uint8_t compute_crc8(uint8_t *data, uint8_t length) {
+uint8_t compute_crc8(const uint8_t *data, uint8_t length) {
     uint8_t crc = 0xFF;
     uint8_t poly = 0x1D;
 
@@ -689,82 +704,20 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
     }
 }
 
-void REF_SIGNAL(volatile uint8_t num){
-	switch (num){
-	case 0:
-		REF_PITCH_ANGLE= 0.0;
-		REF_ROLL_ANGLE= 0.0;
-		REF_YAW_ANGLE= 100.0;
-		REF_Z_DISTANCE= 10;
-		break;
-	case 1:
-		REF_PITCH_ANGLE= 0.0;
-		REF_ROLL_ANGLE= 0.0;
-		REF_YAW_ANGLE= 100.0;
-		REF_Z_DISTANCE= 20;
-		break;
-	case 2:
-		REF_PITCH_ANGLE= 0.0;
-		REF_ROLL_ANGLE= 0.0;
-		REF_YAW_ANGLE= 100.0;
-		REF_Z_DISTANCE= 10;
-		break;
-	case 3:
-		REF_PITCH_ANGLE= 0.0;
-		REF_ROLL_ANGLE= 0.0;
-		REF_YAW_ANGLE= 200.0;
-		REF_Z_DISTANCE= 10;
-		break;
-	case 4:
-		REF_PITCH_ANGLE= 0.0;
-		REF_ROLL_ANGLE= 0.0;
-		REF_YAW_ANGLE= 100.0;
-		REF_Z_DISTANCE= 10;
-		break;
-	case 5:
-		REF_PITCH_ANGLE= 10.0;
-		REF_ROLL_ANGLE= 0.0;
-		REF_YAW_ANGLE= 100.0;
-		REF_Z_DISTANCE= 10;
-		break;
-	case 6:
-		REF_PITCH_ANGLE= -10.0;
-		REF_ROLL_ANGLE= 0.0;
-		REF_YAW_ANGLE= 100.0;
-		REF_Z_DISTANCE= 10;
-		break;
-	case 7:
-		REF_PITCH_ANGLE= 0.0;
-		REF_ROLL_ANGLE= 10.0;
-		REF_YAW_ANGLE= 100.0;
-		REF_Z_DISTANCE= 10;
-		break;
-	case 8:
-		REF_PITCH_ANGLE= 0.0;
-		REF_ROLL_ANGLE= -10.0;
-		REF_YAW_ANGLE= 100.0;
-		REF_Z_DISTANCE= 10;
-		break;
-	case 9:
-		REF_PITCH_ANGLE= 0.0;
-		REF_ROLL_ANGLE= 0.0;
-		REF_YAW_ANGLE= 100.0;
-		REF_Z_DISTANCE= 10;
-		break;
-	case 10:
-		REF_PITCH_ANGLE= 0.0;
-		REF_ROLL_ANGLE= 0.0;
-		REF_YAW_ANGLE= 100.0;
-		REF_Z_DISTANCE= 3;
-		break;
-	case 11:
-		SS=0;
-		break;
-	default:
-		num_ref=12;
-		num_ref_prev=12;
-		break;
-	}
+void REF_SIGNAL(volatile uint8_t num) {
+    if (num < sizeof(ref_signals)/sizeof(ref_signals[0])) {
+        if (num == 11) {
+            SS = 0;
+        } else {
+            REF_PITCH_ANGLE = ref_signals[num][0];
+            REF_ROLL_ANGLE = ref_signals[num][1];
+            REF_YAW_ANGLE = ref_signals[num][2];
+            REF_Z_DISTANCE = ref_signals[num][3];
+        }
+    } else {
+        num_ref = 12;
+        num_ref_prev = 12;
+    }
 }
 /* USER CODE END 4 */
 
