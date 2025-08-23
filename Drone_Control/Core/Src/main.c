@@ -46,27 +46,39 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define ESP32_UART_HANDLE &huart1
+#define ESP32_UART_HANDLE &huart2
 #define ESP32_MSG_LENGTH 6
 #define BNO_I2C_HANDLE &hi2c3
 
 #define SAMPLE_TIME 0.01f
 
-#define PID_KP_MIN 18.0f
-#define PID_KP_MAX 25.0f
-#define PID_KI_MIN 2.0f
-
-#define PID_KI_MAX 15.0f
+#define PID_KP_MIN 4.0f
+#define PID_KP_MAX 12.0f
+#define PID_KI_MIN 0.1f
+#define PID_KI_MAX 5.0f
 #define PID_KD_MIN 4.0f
-#define PID_KD_MAX 10.0f
-#define PID_TAU_MIN 0.2f
-#define PID_TAU_MAX 0.06f
+#define PID_KD_MAX 20.0f
+#define PID_TAU_MIN 0.1f
+#define PID_TAU_MAX 0.2f
 
+#define ROLL_REF_MIN -15.0f
+#define ROLL_REF_MAX 15.0f
+
+#define PITCH_REF_MIN -15.0f
+#define PITCH_REF_MAX 15.0f
+
+#define YAW_REF_MIN 100.0f
+#define YAW_REF_MAX 200.0f
+
+#define Z_REF_MIN 3.0f
+#define Z_REF_MAX 20.0f
+
+#define YAW_BIAS 150.0f
 
 #define SPEED_MIN 48
-#define MAX_SPEED 1600
+#define MAX_SPEED 1900
 
-#define SPEED_OFFSET 600.0f
+#define SPEED_OFFSET 750.0f
 #define ADC_TIMEOUT 1   // us
 
 #define speed 100
@@ -93,27 +105,50 @@ PID_t pid_roll;
 PID_t pid_yaw;
 PID_t pid_z;
 
-float kp = 5;
-float ki = 1.8;
-float kd = 28;
-float tau = PID_TAU_MIN;
+volatile float speed_test=80;
 
-float kp_y = 3;
-float ki_y = 2;
-float kd_y = 20;
-float tau_y = PID_TAU_MIN;
+float kp = 4.5;
+float ki = 2.6;
+float kd = 14;
+float tau = 0.09;
 
-float kp_z = 20;
-float ki_z = 5;
-float kd_z = 30;
-float tau_z = PID_TAU_MIN;
+float kp_y = 5;
+float ki_y = 1.5;
+float kd_y = 12;
+float tau_y = 0.1;
+
+float kp_z = 22;
+float ki_z = 6;
+float kd_z = 8;
+float tau_z = 0.1;
+
+
 volatile float pid_z_counter=1;
+volatile float ref_signal_counter=-1000;
+volatile uint8_t num_ref=0;
+volatile uint8_t num_ref_prev=0;
 
 
 float REF_PITCH_ANGLE= 0.0;
 float REF_ROLL_ANGLE= 0.0;
-float REF_YAW_ANGLE= 180.0;
+float REF_YAW_ANGLE= 100.0;
 float REF_Z_DISTANCE= 10;
+
+static const float ref_signals[][4] = {
+    // pitch, roll, yaw, z
+    [0] = {0.0, 0.0, 100.0, 10.0},
+    [1] = {0.0, 0.0, 100.0, 20.0},
+    [2] = {0.0, 0.0, 100.0, 10.0},
+    [3] = {0.0, 0.0, 200.0, 10.0},
+    [4] = {0.0, 0.0, 100.0, 10.0},
+    [5] = {10.0, 0.0, 100.0, 10.0},
+    [6] = {-10.0, 0.0, 100.0, 10.0},
+    [7] = {0.0, 10.0, 100.0, 10.0},
+    [8] = {0.0, -10.0, 100.0, 10.0},
+    [9] = {0.0, 0.0, 100.0, 10.0},
+    [10] = {0.0, 0.0, 100.0, 3.0},
+    [11] = {0.0, 0.0, 100.0, 10.0},
+};
 
 ////////////////////////
 float echo_start_flag=0;
@@ -166,32 +201,18 @@ volatile uint32_t echo_end = 0;
 volatile uint8_t echo_captured = 0;
 volatile uint32_t last_trigger = 0;
 float distance_cm=0;
-float gyro_z_offset = 0;
 
-float R[3][3] = {
-		{0.9191, 0.3896, -0.0455},
-		   {-0.3900, 0.9200, 0},
-		    {0.0419, 0.0177, 0.9990}
-};
-float ToDrone[3]={0,0,0};
+
 void HCSR04_Trigger(void);
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-#ifdef __GNUC__
-#define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
-#else
-#define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
-#endif
 
-PUTCHAR_PROTOTYPE
-{
-  HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
-  return ch;
-}
-
+/* USER CODE BEGIN PFP */
+uint8_t compute_crc8(const uint8_t *data, uint8_t length);
+/* USER CODE END PFP */
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -248,17 +269,17 @@ int main(void)
 
 
   // PID controllers
-  	PID_Init_Bartek_s_Lab(&pid_pitch, PID_KP_MIN, PID_KI_MIN, PID_KD_MIN,
-  	PID_TAU_MIN, -200.0f, 200.0f, SAMPLE_TIME);
+  	PID_Init_Bartek_s_Lab(&pid_pitch, kp, ki, kd,
+  	tau, -250.0f, 250.0f, SAMPLE_TIME);
 
-  	PID_Init_Bartek_s_Lab(&pid_roll, PID_KP_MIN, PID_KI_MIN, PID_KD_MIN,
-  	PID_TAU_MIN, -200.0f, 200.0f, SAMPLE_TIME);
+  	PID_Init_Bartek_s_Lab(&pid_roll, kp, ki, kd,
+  	tau, -250.0f, 250.0f, SAMPLE_TIME);
 
   	PID_Init_Bartek_s_Lab(&pid_yaw, kp_y, ki_y, kd_y,
   	tau_y, -300.0f, 300.0f, SAMPLE_TIME);
 
   	PID_Init_Bartek_s_Lab(&pid_z, kp_z, ki_z, kd_z,
-  	  	tau_z, -100.0f, 500.0f, SAMPLE_TIME);
+  	  	tau_z, -150.0f, 400.0f, SAMPLE_TIME);
 
   	UartDebugSoftTimer = HAL_GetTick();
 
@@ -266,7 +287,7 @@ int main(void)
 
 	dshot_arm_all_esc();
 
-	//SS=2;
+//	SS=2;
 
 	// AHRS
 		bno055_assignI2C(BNO_I2C_HANDLE);
@@ -282,19 +303,6 @@ int main(void)
   	HAL_UART_Receive_IT(ESP32_UART_HANDLE, rx_esp32_data,ESP32_MSG_LENGTH); // uruchamia odbieranie danych przez UART w trybie przerwań. Kiedy dane przyjdą, zostanie wywołane HAL_UART_RxCpltCallback.
 	while (1)
 	{
-		/*
-		if (HAL_GetTick() - last_trigger > 60) { // max 15 Hz
-		        last_trigger = HAL_GetTick();
-		        HCSR04_Trigger();
-		}
-
-		if (echo_captured) {
-		    echo_captured = 0;
-		    uint32_t diff = (echo_end >= echo_start) ? (echo_end - echo_start) : (0xFFFF - echo_start + echo_end);
-		    distance_cm = diff * 0.0343f / 2.0f; // 343 m/s → 0.0343 cm/µs
-		    printf("Dystans: %.2f cm\n", distance_cm);
-		}
-		*/
 
 		if (white_button_flag == 1)
 		{
@@ -304,8 +312,9 @@ int main(void)
 		if (esp32_data_received_flag == 1)
 		{
 			esp32_data_received_flag = 0;
-			calculated_crc = HAL_CRC_Calculate(&hcrc, (uint32_t*) rx_esp32_data,
-					(uint32_t) 6); //Liczenie CRC8 z SAEJ1850 standardu (0x1D poli oraz 0xFF ini)
+//			calculated_crc = HAL_CRC_Calculate(&hcrc, (uint32_t*) rx_esp32_data,
+//					(uint32_t) 6); //Liczenie CRC8 z SAEJ1850 standardu (0x1D poli oraz 0xFF ini)
+			calculated_crc = compute_crc8(rx_esp32_data, 6);
 			if (calculated_crc == 0)
 			{
 				switch (rx_esp32_data[0])
@@ -330,6 +339,26 @@ int main(void)
 							+ (PID_TAU_MAX - PID_TAU_MIN) * rx_esp32_data[1]
 									/ 100;
 					break;
+				case 0x05: // roll_ref
+					REF_ROLL_ANGLE = ROLL_REF_MIN
+							+ (ROLL_REF_MAX - ROLL_REF_MIN) * rx_esp32_data[1]
+									/ 100;
+					break;
+				case 0x06: // pitch_ref
+					REF_PITCH_ANGLE = PITCH_REF_MIN
+							+ (PITCH_REF_MAX - PITCH_REF_MIN) * rx_esp32_data[1]
+									/ 100;
+					break;
+				case 0x07: // yaw_ref
+					REF_YAW_ANGLE = YAW_REF_MIN
+							+ (YAW_REF_MAX - YAW_REF_MIN) * rx_esp32_data[1]
+									/ 100;
+					break;
+				case 0x08: // z_ref
+					REF_Z_DISTANCE = Z_REF_MIN
+							+ (Z_REF_MAX - Z_REF_MIN) * rx_esp32_data[1]
+									/ 100;
+					break;
 				default:
 					;
 				}
@@ -343,27 +372,15 @@ int main(void)
 
 		}
 
-		PID_Controller_Update_Gains(&pid_pitch, kp, ki, kd, tau);
-		PID_Controller_Update_Gains(&pid_roll, kp, ki, kd, tau);
-		PID_Controller_Update_Gains(&pid_yaw, kp_y, ki_y, kd_y, tau_y);
-		PID_Controller_Update_Gains(&pid_z, kp_z, ki_z, kd_z, tau_z);
+//		PID_Controller_Update_Gains(&pid_pitch, kp, ki, kd, tau);
+//		PID_Controller_Update_Gains(&pid_roll, kp, ki, kd, tau);
+//		PID_Controller_Update_Gains(&pid_yaw, kp_y, ki_y, kd_y, tau_y);
+//		PID_Controller_Update_Gains(&pid_z, kp_z, ki_z, kd_z, tau_z);
+//		if (num_ref!=num_ref_prev){
+//			REF_SIGNAL(num_ref);
+//			num_ref_prev=num_ref;
+//		}
 
-		//dshot_send_all_ref_speeds(speed_ref);
-		/*
-		kali[0]= MPU6050.Accel_X_RAW;
-		kali[1]= MPU6050.Accel_Y_RAW;
-		kali[2]= MPU6050.Accel_Z_RAW;
-
-		ToDrone[0]=0;
-		ToDrone[1]=0;
-		ToDrone[2]=0;
-
-		for (int i=0; i<3;i++){
-			for(int j=0; j<3; j++){
-				ToDrone[i]+=R[i][j]*kali[j];
-			}
-		}
-		*/
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -459,148 +476,158 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 		copter_roll_angle = MPU6050.KalmanAngleY;
 		copter_yaw_angle+=MPU6050.Gz*SAMPLE_TIME;
 		*/
-		////////////////DANE Z BNO(SUROWE+WEWNĘTRZNA FUZJA)//////////
+		//////////////DANE Z BNO(SUROWE+WEWNĘTRZNA FUZJA)//////////
+		bno055_vector_t acc= bno055_getVectorAccelerometer();
+		bno055_vector_t gyro= bno055_getVectorGyroscope();
+		IMU_Fusion_Update(&imu_angles, acc.x, acc.y, acc.z, gyro.x, gyro.y, gyro.z, SAMPLE_TIME);
 
-//		bno055_vector_t acc= bno055_getVectorAccelerometer();
-//		bno055_vector_t gyro= bno055_getVectorGyroscope();
-//		IMU_Fusion_Update(&imu_angles, acc.x, acc.y, acc.z, gyro.x, gyro.y, gyro.z, SAMPLE_TIME);
-//
-//		copter_pitch_angle_komp = -imu_angles.pitch;
-//		copter_roll_angle_komp = -imu_angles.roll;
-//
-//		Kalman_Update(&copter_roll_angle_kal, &copter_pitch_angle_kal, &Roll, &Pitch, acc.x, acc.y, acc.z, gyro.x, gyro.y, gyro.z);
+		copter_pitch_angle_komp = -imu_angles.pitch;
+		copter_roll_angle_komp = -imu_angles.roll;
+
+		Kalman_Update(&copter_roll_angle_kal, &copter_pitch_angle_kal, &Roll, &Pitch, acc.x, acc.y, acc.z, gyro.x, gyro.y, gyro.z);
 
 		////////////////DANE Z BNO(ZEWNĘTRZNA FUZJA)///////////////////
 
 
 		bno_vector = bno055_getVectorEuler();
+//		copter_pitch_angle = copter_pitch_angle_komp;
+//		copter_roll_angle = copter_roll_angle_komp;
+
 		copter_pitch_angle = bno_vector.y;
 		copter_roll_angle = bno_vector.z;
 		copter_yaw_angle = bno_vector.x;
 
 		//////////////////OBLICZANIE WYJŚCIA REGULATORA WYKORZYSTUJĄC ERROR ORAZ REF ANGLE//////////////////
-
-		speed_pitch_ref = PID_Controller_Bartek_s_Lab(&pid_pitch,REF_PITCH_ANGLE,
-				copter_pitch_angle);
-		speed_roll_ref = PID_Controller_Bartek_s_Lab(&pid_roll, REF_ROLL_ANGLE,
-				copter_roll_angle);
-		speed_yaw_ref = PID_Controller_Bartek_s_Lab(&pid_yaw, REF_YAW_ANGLE,
-				copter_yaw_angle);
-		speed_z_ref = PID_Controller_Bartek_s_Lab(&pid_z, REF_Z_DISTANCE,
-						copter_z_distance);
+		if(SS==1){
+			speed_pitch_ref = PID_Controller_Bartek_s_Lab(&pid_pitch,REF_PITCH_ANGLE,
+					copter_pitch_angle);
+			speed_roll_ref = PID_Controller_Bartek_s_Lab(&pid_roll, REF_ROLL_ANGLE,
+					copter_roll_angle);
+			speed_yaw_ref = PID_Controller_Bartek_s_Lab(&pid_yaw, REF_YAW_ANGLE,
+					copter_yaw_angle);
 
 
+			////////////////3DOF/////////////////////
 
-		////////////////3DOF/////////////////////
+			if(pid_z_counter!=0){
+				speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+						+ speed_pitch_ref +speed_yaw_ref);
+				speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+						- speed_pitch_ref -speed_yaw_ref);
+				speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+						- speed_pitch_ref +speed_yaw_ref);
+				speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+						+ speed_pitch_ref -speed_yaw_ref);
+			}
+//
+//
+//
+//			////////////////4DOF/////////////////////
+			else {
+				speed_z_ref = PID_Controller_Bartek_s_Lab(&pid_z, REF_Z_DISTANCE,
+										copter_z_distance);
 
-		if(pid_z_counter!=0){
-			speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
-					+ speed_pitch_ref +speed_yaw_ref);
-			speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
-					- speed_pitch_ref -speed_yaw_ref);
-			speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
-					- speed_pitch_ref +speed_yaw_ref);
-			speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
-					+ speed_pitch_ref -speed_yaw_ref);
-		}
+				speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+						+ speed_pitch_ref +speed_yaw_ref+speed_z_ref);
+				speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+						- speed_pitch_ref -speed_yaw_ref+speed_z_ref);
+				speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+						- speed_pitch_ref +speed_yaw_ref+speed_z_ref);
+				speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+						+ speed_pitch_ref -speed_yaw_ref+speed_z_ref);
+			}
+
+//
+			if (ref_signal_counter==500){
+				num_ref++;
+				ref_signal_counter=0;
+			}
+
+			////////////////2DOF/////////////////////
+
+//			speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+//					+ speed_pitch_ref);
+//			speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+//					- speed_pitch_ref);
+//			speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+//					- speed_pitch_ref);
+//			speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+//					+ speed_pitch_ref);
 
 
+			/////////////1DOF///////////////////////////
 
-		////////////////4DOF/////////////////////
-		else {
-			speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
-					+ speed_pitch_ref +speed_yaw_ref+speed_z_ref);
-			speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
-					- speed_pitch_ref -speed_yaw_ref+speed_z_ref);
-			speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
-					- speed_pitch_ref +speed_yaw_ref+speed_z_ref);
-			speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
-					+ speed_pitch_ref -speed_yaw_ref+speed_z_ref);
-		}
+//			speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref);
+//			speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref);
+//			speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref);
+//			speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref);
 
+			///////////////SPRAWDZENIE CZY PRĘDKOŚCI MIESZCZĄ SIĘ W ZAKRESIE//////////
+			// Double-check :))
+			if (speed_1_ref < 48)
+			{
+				speed_1_ref = 48;
+			}
+			else if (speed_1_ref > MAX_SPEED)
+			{
+				speed_1_ref = MAX_SPEED;
+			}
+			else
+			{
+				__NOP();
+			}
 
+			if (speed_2_ref < 48)
+			{
+				speed_2_ref = 48;
+			}
+			else if (speed_2_ref > MAX_SPEED)
+			{
+				speed_2_ref = MAX_SPEED;
+			}
+			else
+			{
+				__NOP();
+			}
 
-		////////////////2DOF/////////////////////
-		/*
-		speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
-				+ speed_pitch_ref);
-		speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
-				- speed_pitch_ref);
-		speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
-				- speed_pitch_ref);
-		speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
-				+ speed_pitch_ref);
-*/
+			if (speed_3_ref < 48)
+			{
+				speed_3_ref = 48;
+			}
+			else if (speed_3_ref > MAX_SPEED)
+			{
+				speed_3_ref = MAX_SPEED;
+			}
+			else
+			{
+				__NOP();
+			}
 
-		/////////////1DOF///////////////////////////
-
-//		speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref);
-//		speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref);
-//		speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref);
-//		speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref);
-
-		///////////////SPRAWDZENIE CZY PRĘDKOŚCI MIESZCZĄ SIĘ W ZAKRESIE//////////
-		// Double-check :))
-		if (speed_1_ref < 48)
-		{
-			speed_1_ref = 48;
-		}
-		else if (speed_1_ref > MAX_SPEED)
-		{
-			speed_1_ref = MAX_SPEED;
-		}
-		else
-		{
-			__NOP();
-		}
-
-		if (speed_2_ref < 48)
-		{
-			speed_2_ref = 48;
-		}
-		else if (speed_2_ref > MAX_SPEED)
-		{
-			speed_2_ref = MAX_SPEED;
-		}
-		else
-		{
-			__NOP();
-		}
-
-		if (speed_3_ref < 48)
-		{
-			speed_3_ref = 48;
-		}
-		else if (speed_3_ref > MAX_SPEED)
-		{
-			speed_3_ref = MAX_SPEED;
-		}
-		else
-		{
-			__NOP();
-		}
-
-		if (speed_4_ref < 48)
-		{
-			speed_4_ref = 48;
-		}
-		else if (speed_4_ref > MAX_SPEED)
-		{
-			speed_4_ref = MAX_SPEED;
-		}
-		else
-		{
-			__NOP();
-		}
-		/////////WYSYŁANIE PRĘDKOŚCI DO ESC////////////
-		speeds[0] = speed_1_ref;
-		speeds[1] = speed_2_ref;
-		speeds[2] = speed_3_ref;
-		speeds[3] = speed_4_ref;
-		if (SS==1){
-			dshot_send_all_ref_speeds(speeds);
-
-			if(pid_z_counter<1000 && pid_z_counter!=0)
+			if (speed_4_ref < 48)
+			{
+				speed_4_ref = 48;
+			}
+			else if (speed_4_ref > MAX_SPEED)
+			{
+				speed_4_ref = MAX_SPEED;
+			}
+			else
+			{
+				__NOP();
+			}
+			/////////WYSYŁANIE PRĘDKOŚCI DO ESC////////////
+			speeds[0] = speed_1_ref;
+			speeds[1] = speed_2_ref;
+			speeds[2] = speed_3_ref;
+			speeds[3] = speed_4_ref;
+//			dshot_send_all_ref_speeds(speeds);
+//			base[0]=speed_test;
+//			base[1]=speed_test;
+//			base[2]=speed_test;
+//			base[3]=speed_test;
+//			dshot_send_all_ref_speeds(base);
+			ref_signal_counter++;
+			if(pid_z_counter<700 && pid_z_counter!=0)
 			{
 				pid_z_counter++;
 			}
@@ -609,21 +636,26 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 			}
 
 		}
+
+
+
 		else if (SS==2){
 			__NOP();
 		}
+
+
 		else{
-			base[0]=100;
-			base[1]=100;
-			base[2]=100;
-			base[3]=100;
+			base[0]=200;
+			base[1]=200;
+			base[2]=200;
+			base[3]=200;
 			dshot_send_all_ref_speeds(base);
 		}
 
 	}
 }
 
-uint8_t compute_crc8(uint8_t *data, uint8_t length) {
+uint8_t compute_crc8(const uint8_t *data, uint8_t length) {
     uint8_t crc = 0xFF;
     uint8_t poly = 0x1D;
 
@@ -642,7 +674,7 @@ uint8_t compute_crc8(uint8_t *data, uint8_t length) {
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-	if (huart->Instance == USART1)
+	if (huart->Instance == USART2)
 	{
 		esp32_data_received_flag = 1;
 		HAL_UART_Receive_IT(huart, rx_esp32_data, ESP32_MSG_LENGTH);
@@ -669,6 +701,22 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
             HAL_TIM_Base_Stop(&htim2);
             echo_start_flag = 0;
         }
+    }
+}
+
+void REF_SIGNAL(volatile uint8_t num) {
+    if (num < sizeof(ref_signals)/sizeof(ref_signals[0])) {
+        if (num == 11) {
+            SS = 0;
+        } else {
+            REF_PITCH_ANGLE = ref_signals[num][0];
+            REF_ROLL_ANGLE = ref_signals[num][1];
+            REF_YAW_ANGLE = ref_signals[num][2];
+            REF_Z_DISTANCE = ref_signals[num][3];
+        }
+    } else {
+        num_ref = 12;
+        num_ref_prev = 12;
     }
 }
 /* USER CODE END 4 */
