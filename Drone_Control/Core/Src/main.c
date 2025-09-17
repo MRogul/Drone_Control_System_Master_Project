@@ -27,7 +27,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "dshot150.h"
+#include "dshot300.h"
 #include "mpu6050.h"
 #include "stdio.h"//printf function
 #include "pid_controller.h"
@@ -208,11 +208,10 @@ void HCSR04_Trigger(void);
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-/* USER CODE BEGIN PFP */
+
 
 /* USER CODE BEGIN PFP */
 uint8_t compute_crc8(const uint8_t *data, uint8_t length);
-/* USER CODE END PFP */
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
