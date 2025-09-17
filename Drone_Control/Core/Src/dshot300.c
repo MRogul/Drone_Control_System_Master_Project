@@ -1,4 +1,4 @@
-#include "dshot150.h"
+#include <dshot300.h>
 #include "tim.h"
 
 #define NUM_MOTORS 4

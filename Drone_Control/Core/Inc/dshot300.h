@@ -1,13 +1,13 @@
 /*
- * dshot150.h
+ * dshot300.h
  *
  *  Created on: Sep 1, 2023
  *      Author: user
  *  Modified on: May 8, 2025
  */
 
-#ifndef INC_DSHOT150_H_
-#define INC_DSHOT150_H_
+#ifndef INC_DSHOT300_H_
+#define INC_DSHOT300_H_
 
 #include "main.h"
 
@@ -49,4 +49,4 @@ void dshot_send_all_ref_speeds(uint16_t speeds[DSHOT_NUM_MOTORS]);
 void dshot_arm_all_esc(void);
 // Można później dodać funkcje zbiorcze do LED i kierunku jeśli będą potrzebne
 
-#endif /* INC_DSHOT150_H_ */
+#endif /* INC_DSHOT300_H_ */
