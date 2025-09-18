@@ -82,6 +82,18 @@
 #define ADC_TIMEOUT 1   // us
 
 #define speed 100
+
+//Kalman filter parameters
+
+#define Qa_roll  0.006955685f
+#define Qa_pitch  0.012531481f
+
+#define Qb_roll  0.00006955685f
+#define Qb_pitch  0.00006955685f
+
+#define R_roll 0.00708008f
+#define R_pitch 0.005146486f
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -96,6 +108,11 @@ uint16_t adc_reading;
 uint16_t speed_ref[DSHOT_NUM_MOTORS]={speed,speed,speed,speed};
 uint16_t accel=0;
 uint16_t kali[3]={0,0,0};
+
+volatile float gyr_y=0;
+volatile float gyr_x=0;
+volatile float ac_x=0;
+volatile float ac_y=0;
 
 volatile uint8_t white_button_flag = 0;
 
@@ -208,8 +225,6 @@ void HCSR04_Trigger(void);
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-
-
 /* USER CODE BEGIN PFP */
 uint8_t compute_crc8(const uint8_t *data, uint8_t length);
 /* USER CODE END PFP */
@@ -259,8 +274,8 @@ int main(void)
   //MPU6050_Init(&hi2c3);
   //MPU6050_Calibrate_Gyro(&hi2c3, &MPU6050, 500);
 
-  Kalman_Init(&Roll);
-  Kalman_Init(&Pitch);
+  Kalman_Init(&Roll, Qa_roll, Qb_roll, R_roll);
+  Kalman_Init(&Pitch, Qa_pitch, Qb_pitch, R_pitch);
 
   HAL_TIM_Base_Start(&htim2); //Czas do czujników odległościowych
   HAL_TIM_Base_Start_IT(&htim15); //Timer od częstotliwości regulatora i wysyłania prędkości do drona
@@ -477,7 +492,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 		*/
 		//////////////DANE Z BNO(SUROWE+WEWNĘTRZNA FUZJA)//////////
 		bno055_vector_t acc= bno055_getVectorAccelerometer();
+
+//	    ac_x  = atan2f(acc.y, acc.z) * 57.2958;
+//	    ac_y = atan2f(-acc.x, sqrtf(acc.y*acc.y + acc.z*acc.z)) * 57.2958;
 		bno055_vector_t gyro= bno055_getVectorGyroscope();
+//		gyr_x=gyro.x;
+//		gyr_y=gyro.y;
 		IMU_Fusion_Update(&imu_angles, acc.x, acc.y, acc.z, gyro.x, gyro.y, gyro.z, SAMPLE_TIME);
 
 		copter_pitch_angle_komp = -imu_angles.pitch;
@@ -489,11 +509,11 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 
 
 		bno_vector = bno055_getVectorEuler();
-//		copter_pitch_angle = copter_pitch_angle_komp;
-//		copter_roll_angle = copter_roll_angle_komp;
+		copter_pitch_angle = copter_pitch_angle_kal;
+		copter_roll_angle = copter_roll_angle_kal;
 
-		copter_pitch_angle = bno_vector.y;
-		copter_roll_angle = bno_vector.z;
+//		copter_pitch_angle = bno_vector.y;
+//		copter_roll_angle = bno_vector.z;
 		copter_yaw_angle = bno_vector.x;
 
 		//////////////////OBLICZANIE WYJŚCIA REGULATORA WYKORZYSTUJĄC ERROR ORAZ REF ANGLE//////////////////
@@ -508,7 +528,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 
 			////////////////3DOF/////////////////////
 
-			if(pid_z_counter!=0){
+			//if(pid_z_counter!=0){
 				speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
 						+ speed_pitch_ref +speed_yaw_ref);
 				speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
@@ -517,24 +537,24 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 						- speed_pitch_ref +speed_yaw_ref);
 				speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
 						+ speed_pitch_ref -speed_yaw_ref);
-			}
+			//}
 //
 //
 //
 //			////////////////4DOF/////////////////////
-			else {
-				speed_z_ref = PID_Controller_Bartek_s_Lab(&pid_z, REF_Z_DISTANCE,
-										copter_z_distance);
-
-				speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
-						+ speed_pitch_ref +speed_yaw_ref+speed_z_ref);
-				speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
-						- speed_pitch_ref -speed_yaw_ref+speed_z_ref);
-				speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
-						- speed_pitch_ref +speed_yaw_ref+speed_z_ref);
-				speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
-						+ speed_pitch_ref -speed_yaw_ref+speed_z_ref);
-			}
+//			else {
+//				speed_z_ref = PID_Controller_Bartek_s_Lab(&pid_z, REF_Z_DISTANCE,
+//										copter_z_distance);
+//
+//				speed_1_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+//						+ speed_pitch_ref +speed_yaw_ref+speed_z_ref);
+//				speed_2_ref = (uint16_t) (SPEED_OFFSET + speed_roll_ref
+//						- speed_pitch_ref -speed_yaw_ref+speed_z_ref);
+//				speed_3_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+//						- speed_pitch_ref +speed_yaw_ref+speed_z_ref);
+//				speed_4_ref = (uint16_t) (SPEED_OFFSET - speed_roll_ref
+//						+ speed_pitch_ref -speed_yaw_ref+speed_z_ref);
+//			}
 
 //
 			if (ref_signal_counter==500){
@@ -619,7 +639,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 			speeds[1] = speed_2_ref;
 			speeds[2] = speed_3_ref;
 			speeds[3] = speed_4_ref;
-//			dshot_send_all_ref_speeds(speeds);
+			dshot_send_all_ref_speeds(speeds);
 //			base[0]=speed_test;
 //			base[1]=speed_test;
 //			base[2]=speed_test;

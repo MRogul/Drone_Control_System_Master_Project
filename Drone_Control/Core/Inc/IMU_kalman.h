@@ -11,7 +11,7 @@ typedef struct {
     float R_measure;  // szum pomiaru (akcelerometr)
 } KalmanFilter;
 
-void Kalman_Init(KalmanFilter *kf);
+void Kalman_Init(KalmanFilter *kf, float Qa, float Qb, float R);
 void Kalman_Update(volatile float *Roll, volatile float *Pitch, KalmanFilter *kf_roll,
         KalmanFilter *kf_pitch,
         float ax, float ay, float az,

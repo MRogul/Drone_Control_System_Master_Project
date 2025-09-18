@@ -56,7 +56,7 @@ void dshot_prepare_dmabuffer(uint32_t *_dshot_dmabuffer_ccr, uint16_t _value)
     uint16_t packet = dshot_prepare_packet(_value);
     for (int i = 0; i < 16; i++)
     {
-        _dshot_dmabuffer_ccr[i] = (packet & 0x8000) ? DSHOT150_BIT_1 : DSHOT150_BIT_0;
+        _dshot_dmabuffer_ccr[i] = (packet & 0x8000) ? DSHOT300_BIT_1 : DSHOT300_BIT_0;
         packet <<= 1;
     }
     _dshot_dmabuffer_ccr[16] = 0;
