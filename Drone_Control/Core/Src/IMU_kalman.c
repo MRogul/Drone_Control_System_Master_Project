@@ -16,6 +16,10 @@ typedef struct {
 //static Filter filter_roll_out = {0, 0.6f};
 //static Filter filter_pitch_out = {0, 0.6f};
 
+static Filter filter_ax = {0, 0.7f};
+static Filter filter_ay = {0, 0.7f};
+static Filter filter_az = {0, 0.7f};
+
 float apply_filter(float input, Filter* filter) {
     filter->value = filter->alpha * filter->value + (1.0f - filter->alpha) * input;
     return filter->value;
@@ -31,9 +35,9 @@ void Kalman_Init(KalmanFilter* kf, float Qa, float Qb, float R) {
     kf->P[1][0] = 0.0f;
     kf->P[1][1] = 1.0f;
 
-    kf->Q_angle = Qa*0.3;
-    kf->Q_bias = Qb*2.0;
-    kf->R_measure = R*10.0f;
+    kf->Q_angle = Qa;//*0.3
+    kf->Q_bias = Qb;//*2.0
+    kf->R_measure = R*0.8f;//*10.0f
 }
 
 /*
@@ -53,8 +57,16 @@ void Kalman_Update(volatile float *Roll, volatile float *Pitch, KalmanFilter *kf
 {
 
     // Akcelerometr
-    float acc_roll  = atan2f(ay, az) * RAD_TO_DEG;
-    float acc_pitch = atan2f(-ax, sqrtf(ay*ay + az*az)) * RAD_TO_DEG;
+	float ax_f = apply_filter(ax, &filter_ax);
+	float ay_f = apply_filter(ay, &filter_ay);
+	float az_f = apply_filter(az, &filter_az);
+
+    float acc_roll  = atan2f(ay_f, az_f) * RAD_TO_DEG;
+    float acc_pitch = atan2f(-ax_f, sqrtf(ay_f*ay_f + az_f*az_f)) * RAD_TO_DEG;
+
+//    float acc_roll  = atan2f(ay, az) * RAD_TO_DEG;
+//    float acc_pitch = atan2f(-ax, sqrtf(ay*ay + az*az)) * RAD_TO_DEG;
+
 
     // 2. PREDYKCJA
     float rate_roll = gx - kf_roll->bias;

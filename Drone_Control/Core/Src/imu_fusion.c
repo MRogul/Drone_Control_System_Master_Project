@@ -28,9 +28,12 @@ void IMU_Fusion_Update(IMU_Angles *angles,
     smooth_gy = 0.7f * gy + 0.3f * smooth_gy;
     smooth_gz = 0.7f * gz + 0.3f * smooth_gz;
 
-    // 2. Przybliżenie kątów z akcelerometru [stopnie]
-    float acc_roll  = atan2f(smooth_ay, smooth_az) * RAD_TO_DEG;
-    float acc_pitch = atan2f(-smooth_ax, sqrtf(smooth_ay * smooth_ay + smooth_az * smooth_az)) * RAD_TO_DEG;
+//    // 2. Przybliżenie kątów z akcelerometru [stopnie]
+//    float acc_roll  = atan2f(smooth_ay, smooth_az) * RAD_TO_DEG;
+//    float acc_pitch = atan2f(-smooth_ax, sqrtf(smooth_ay * smooth_ay + smooth_az * smooth_az)) * RAD_TO_DEG;
+
+    float acc_roll  = atan2f(ay, az) * RAD_TO_DEG;
+    float acc_pitch = atan2f(-ax, sqrtf(ay * ay + az * az)) * RAD_TO_DEG;
 
     // 3. Zamiana istniejących kątów na radiany do przekształcenia
     float roll_rad  = angles->roll  * DEG_TO_RAD;
