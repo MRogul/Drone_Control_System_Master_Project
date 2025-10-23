@@ -5,23 +5,14 @@
 *.tmp
 *.bak
 *.old
-*.DS
+.DS_Store
 
-Test_18_09_default_kalman/
-test_25_09/
-Tests/
-Tests_20.08/
-Badania/
-
-git rm -r --cached Test_18_09_default_kalman/
-
-git rm -r --cached test_25_09/
-
-
-git rm -r --cached Tests/
-
-git rm -r --cached Tests_20.08/
-
-
-git rm -r --cached Badania/
-
+# ==========================
+# Katalogi z danymi/badaniami
+# (trailing slash = folder)
+# ==========================
+/Test_18_09_default_kalman/
+/test_25_09/
+/Tests/
+/Tests_20.08/
+/Badania/
