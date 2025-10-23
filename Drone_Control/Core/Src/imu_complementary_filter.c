@@ -4,7 +4,7 @@
  *  Created on: Jul 24, 2025
  *      Author: lolme
  */
-#include "imu_fusion.h"
+#include <imu_complementary_filter.h>
 #include <math.h>
 
 #define ALPHA 0.98f // Współczynnik filtru

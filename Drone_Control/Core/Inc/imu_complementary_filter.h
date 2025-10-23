@@ -5,8 +5,8 @@
  *      Author: lolme
  */
 
-#ifndef INC_IMU_FUSION_H_
-#define INC_IMU_FUSION_H_
+#ifndef INC_IMU_COMPLEMENTARY_FILTER_H_
+#define INC_IMU_COMPLEMENTARY_FILTER_H_
 
 #include <math.h>
 
@@ -20,4 +20,4 @@ void IMU_Fusion_Update(IMU_Angles *angles,
         float gx, float gy, float gz,
         float dt);
 
-#endif /* INC_IMU_FUSION_H_ */
+#endif /* INC_IMU_COMPLEMENTARY_FILTER_H_ */

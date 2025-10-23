@@ -17,6 +17,7 @@
   */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
+#include <imu_complementary_filter.h>
 #include "main.h"
 #include "crc.h"
 #include "dma.h"
@@ -34,9 +35,11 @@
 #include <string.h>
 #include <stdbool.h>
 #include "bno055_stm32.h"
-#include "U_to_throttle.h"
-#include "imu_fusion.h"
-#include "IMU_kalman.h"
+#include "imu_kalman_filter.h"
+#include "imu_complementary_filter.h"
+#include "esp32_cmd.h"
+#include "hcsr04.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -104,127 +107,108 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-uint16_t adc_reading;
-uint16_t speed_ref[DSHOT_NUM_MOTORS]={speed,speed,speed,speed};
-uint16_t accel=0;
-uint16_t kali[3]={0,0,0};
 
-volatile float gyr_y=0;
-volatile float gyr_x=0;
-volatile float ac_x=0;
-volatile float ac_y=0;
-volatile float ac_x_f=0;
-volatile float ac_y_f=0;
-
-
+/* Podstawowe dane i parametry */
+uint16_t speed_ref[DSHOT_NUM_MOTORS] = {speed, speed, speed, speed};
 volatile uint8_t white_button_flag = 0;
 
-//PID
+/* PID controllery */
 PID_t pid_pitch;
 PID_t pid_roll;
 PID_t pid_yaw;
 PID_t pid_z;
 
-volatile float speed_test=80;
+/* Wzmocnienia regulatorów */
+float kp = 4.5f;
+float ki = 2.6f;
+float kd = 14.0f;
+float tau = 0.09f;
 
-float kp = 4.5;
-float ki = 2.6;
-float kd = 14;
-float tau = 0.09;
+float kp_y = 5.0f;
+float ki_y = 1.5f;
+float kd_y = 12.0f;
+float tau_y = 0.1f;
 
-float kp_y = 5;
-float ki_y = 1.5;
-float kd_y = 12;
-float tau_y = 0.1;
+float kp_z = 22.0f;
+float ki_z = 6.0f;
+float kd_z = 8.0f;
+float tau_z = 0.1f;
 
-float kp_z = 22;
-float ki_z = 6;
-float kd_z = 8;
-float tau_z = 0.1;
+/* Liczniki i sygnały odniesienia */
+volatile float pid_z_counter = 1.0f;
+volatile float ref_signal_counter = -1000.0f;
+volatile uint8_t num_ref = 0;
+volatile uint8_t num_ref_prev = 0;
 
+/* Wartości zadane */
+float REF_PITCH_ANGLE = 0.0f;
+float REF_ROLL_ANGLE  = 0.0f;
+float REF_YAW_ANGLE   = 100.0f;
+float REF_Z_DISTANCE  = 10.0f;
 
-volatile float pid_z_counter=1;
-volatile float ref_signal_counter=-1000;
-volatile uint8_t num_ref=0;
-volatile uint8_t num_ref_prev=0;
-
-
-float REF_PITCH_ANGLE= 0.0;
-float REF_ROLL_ANGLE= 0.0;
-float REF_YAW_ANGLE= 100.0;
-float REF_Z_DISTANCE= 10;
-
+/* Sekwencje sygnałów odniesienia */
 static const float ref_signals[][4] = {
     // pitch, roll, yaw, z
-    [0] = {0.0, 0.0, 100.0, 10.0},
-    [1] = {0.0, 0.0, 100.0, 20.0},
-    [2] = {0.0, 0.0, 100.0, 10.0},
-    [3] = {0.0, 0.0, 200.0, 10.0},
-    [4] = {0.0, 0.0, 100.0, 10.0},
-    [5] = {10.0, 0.0, 100.0, 10.0},
-    [6] = {-10.0, 0.0, 100.0, 10.0},
-    [7] = {0.0, 10.0, 100.0, 10.0},
-    [8] = {0.0, -10.0, 100.0, 10.0},
-    [9] = {0.0, 0.0, 100.0, 10.0},
+    [0]  = {0.0, 0.0, 100.0, 10.0},
+    [1]  = {0.0, 0.0, 100.0, 20.0},
+    [2]  = {0.0, 0.0, 100.0, 10.0},
+    [3]  = {0.0, 0.0, 200.0, 10.0},
+    [4]  = {0.0, 0.0, 100.0, 10.0},
+    [5]  = {10.0, 0.0, 100.0, 10.0},
+    [6]  = {-10.0, 0.0, 100.0, 10.0},
+    [7]  = {0.0, 10.0, 100.0, 10.0},
+    [8]  = {0.0, -10.0, 100.0, 10.0},
+    [9]  = {0.0, 0.0, 100.0, 10.0},
     [10] = {0.0, 0.0, 100.0, 3.0},
     [11] = {0.0, 0.0, 100.0, 10.0},
 };
 
-////////////////////////
-float echo_start_flag=0;
-volatile uint8_t SS=0;
-
-volatile bno055_vector_t bno_vector;
+/* Flagi i stany systemowe */
+volatile uint8_t SS = 0;
 volatile uint8_t emergency_stop_flag = 0;
+
+/* Dane z czujników i filtru */
+volatile bno055_vector_t bno_vector;
 volatile float copter_pitch_angle;
 volatile float copter_roll_angle;
 volatile float copter_yaw_angle;
 volatile float copter_z_distance;
 
-volatile float copter_pitch_angle_komp;
-volatile float copter_roll_angle_komp;
-
 volatile float copter_pitch_angle_kal;
 volatile float copter_roll_angle_kal;
 
-
-volatile float copter_yaw_angle_intergral;
+/* Wyjścia regulatorów */
 volatile float speed_pitch_ref;
 volatile float speed_roll_ref;
 volatile float speed_yaw_ref;
 volatile float speed_z_ref;
 
-volatile float SSGy, SSGx;
-
-volatile uint8_t Trig_counter=0;
-
+/* Sygnały prędkości dla ESC */
 volatile uint16_t speed_1_ref;
 volatile uint16_t speed_2_ref;
 volatile uint16_t speed_3_ref;
 volatile uint16_t speed_4_ref;
 
-uint8_t calculated_crc = 0;
-
-uint8_t uart_line[64];
-int uart_line_length;
-
+/* Komunikacja z ESP32 */
 uint8_t esp32_data_received_flag = 0;
 uint8_t rx_esp32_data[ESP32_MSG_LENGTH];
+
+/* Debug UART */
+uint8_t uart_line[64];
+int uart_line_length;
 uint32_t UartDebugSoftTimer;
 
+/* IMU i filtry */
 MPU6050_t MPU6050;
 IMU_Angles imu_angles;
 KalmanFilter Roll;
 KalmanFilter Pitch;
 
-volatile uint32_t echo_end = 0;
-volatile uint8_t echo_captured = 0;
-volatile uint32_t last_trigger = 0;
-float distance_cm=0;
+/* HC-SR04 – struktura drivera */
+static HCSR04_t hcsr;
 
-
-void HCSR04_Trigger(void);
 /* USER CODE END PV */
+
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
@@ -311,6 +295,46 @@ int main(void)
 		bno055_setup();
 		bno055_setOperationModeNDOF();
 
+	static ESP32_CmdCtx esp_ctx = {
+		    .pid_pitch = &pid_pitch,
+		    .pid_roll  = &pid_roll,
+		    .pid_yaw   = &pid_yaw,
+		    .pid_z     = &pid_z,
+
+		    .kp = &kp, .ki = &ki, .kd = &kd, .tau = &tau,
+
+		    .kp_y = &kp_y, .ki_y = &ki_y, .kd_y = &kd_y, .tau_y = &tau_y,
+		    .kp_z = &kp_z, .ki_z = &ki_z, .kd_z = &kd_z, .tau_z = &tau_z,
+
+		    .ref_roll  = &REF_ROLL_ANGLE,
+		    .ref_pitch = &REF_PITCH_ANGLE,
+		    .ref_yaw   = &REF_YAW_ANGLE,
+		    .ref_z     = &REF_Z_DISTANCE,
+
+		    .kp_min = PID_KP_MIN,   .kp_max = PID_KP_MAX,
+		    .ki_min = PID_KI_MIN,   .ki_max = PID_KI_MAX,
+		    .kd_min = PID_KD_MIN,   .kd_max = PID_KD_MAX,
+		    .tau_min = PID_TAU_MIN, .tau_max = PID_TAU_MAX,
+
+		    .roll_min  = ROLL_REF_MIN,   .roll_max  = ROLL_REF_MAX,
+		    .pitch_min = PITCH_REF_MIN,  .pitch_max = PITCH_REF_MAX,
+		    .yaw_min   = YAW_REF_MIN,    .yaw_max   = YAW_REF_MAX,
+		    .z_min     = Z_REF_MIN,      .z_max     = Z_REF_MAX,
+		};
+
+	/* HC-SR04: TIM2 jako licznik czasu ECHO, TRIG/ECHO jak w CubeMX */
+	HCSR04_Init(&hcsr,
+	            &htim2,
+	            1000000u,                  /* timer_hz (tu 1 MHz) */
+	            TRIG_PIN_GPIO_Port, TRIG_PIN_Pin,
+	            ECHO_PIN_Pin);
+
+	/* Opcjonalnie: co 6 wywołań timera sterującego zrób trigger (jak Twój Trig_counter) */
+	HCSR04_SetPeriodicDivider(&hcsr, 6);
+	/* Opcjonalnie: długość impulsu TRIG (domyślnie ~50 µs) */
+	HCSR04_SetTrigPulse(&hcsr, 400);
+
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -326,68 +350,12 @@ int main(void)
 			white_button_flag = 0;
 			__NOP();
 		}
-		if (esp32_data_received_flag == 1)
-		{
-			esp32_data_received_flag = 0;
-//			calculated_crc = HAL_CRC_Calculate(&hcrc, (uint32_t*) rx_esp32_data,
-//					(uint32_t) 6); //Liczenie CRC8 z SAEJ1850 standardu (0x1D poli oraz 0xFF ini)
-			calculated_crc = compute_crc8(rx_esp32_data, 6);
-			if (calculated_crc == 0)
-			{
-				switch (rx_esp32_data[0])
-				{
-				case 0x01: // kp
-					kp = PID_KP_MIN
-							+ (PID_KP_MAX - PID_KP_MIN) * rx_esp32_data[1]
-									/ 100;
-					break;
-				case 0x02: // ki
-					ki = PID_KI_MIN
-							+ (PID_KI_MAX - PID_KI_MIN) * rx_esp32_data[1]
-									/ 100;
-					break;
-				case 0x03: // kd
-					kd = PID_KD_MIN
-							+ (PID_KD_MAX - PID_KD_MIN) * rx_esp32_data[1]
-									/ 100;
-					break;
-				case 0x04: // tau
-					tau = PID_TAU_MIN
-							+ (PID_TAU_MAX - PID_TAU_MIN) * rx_esp32_data[1]
-									/ 100;
-					break;
-				case 0x05: // roll_ref
-					REF_ROLL_ANGLE = ROLL_REF_MIN
-							+ (ROLL_REF_MAX - ROLL_REF_MIN) * rx_esp32_data[1]
-									/ 100;
-					break;
-				case 0x06: // pitch_ref
-					REF_PITCH_ANGLE = PITCH_REF_MIN
-							+ (PITCH_REF_MAX - PITCH_REF_MIN) * rx_esp32_data[1]
-									/ 100;
-					break;
-				case 0x07: // yaw_ref
-					REF_YAW_ANGLE = YAW_REF_MIN
-							+ (YAW_REF_MAX - YAW_REF_MIN) * rx_esp32_data[1]
-									/ 100;
-					break;
-				case 0x08: // z_ref
-					REF_Z_DISTANCE = Z_REF_MIN
-							+ (Z_REF_MAX - Z_REF_MIN) * rx_esp32_data[1]
-									/ 100;
-					break;
-				default:
-					;
-				}
-
-				PID_Controller_Update_Gains(&pid_pitch, kp, ki, kd, tau);
-				PID_Controller_Update_Gains(&pid_roll, kp, ki, kd, tau);
-				PID_Controller_Update_Gains(&pid_yaw, kp_y, ki_y, kd_y, tau_y);
-				PID_Controller_Update_Gains(&pid_z, kp_z, ki_z, kd_z, tau_z);
-			}
+	    (void)ESP32_PollAndProcess(&esp32_data_received_flag,
+	                               rx_esp32_data,
+	                               ESP32_MSG_LENGTH,    // = 6
+	                               &esp_ctx);
 
 
-		}
 
 //		PID_Controller_Update_Gains(&pid_pitch, kp, ki, kd, tau);
 //		PID_Controller_Update_Gains(&pid_roll, kp, ki, kd, tau);
@@ -477,14 +445,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 
 	if (htim->Instance == TIM15) //sprawdzenie od którego timera jest przerwanie
 	{
-		if (Trig_counter>5){
-			HCSR04_Trigger();
+		/* Periodyczne wyzwalanie pomiaru odległości */
+		(void)HCSR04_OnPeriodic(&hcsr);
 
-			Trig_counter=0;
-
+		/* Jeśli przyszła nowa próbka – pobierz i przypisz do zmiennej systemowej */
+		if (HCSR04_HasNew(&hcsr)) {
+		    copter_z_distance = HCSR04_GetDistanceCm(&hcsr);
 		}
-		copter_z_distance = echo_end * 0.0343f / 2.0f;
-		Trig_counter++;
+
 
 		/*
 		/////////////POBIERANIE WYCHYLENIA Z CZUJNIKA MPU6050/////////////
@@ -690,23 +658,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) //wejście w przerwa
 	}
 }
 
-uint8_t compute_crc8(const uint8_t *data, uint8_t length) {
-    uint8_t crc = 0xFF;
-    uint8_t poly = 0x1D;
-
-    for (uint8_t i = 0; i < length; i++) {
-        crc ^= data[i];
-        for (uint8_t j = 0; j < 8; j++) {
-            if (crc & 0x80) {
-                crc = (crc << 1) ^ poly;
-            } else {
-                crc <<= 1;
-            }
-        }
-    }
-    return crc;
-}
-
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 	if (huart->Instance == USART2)
@@ -716,28 +667,13 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 	}
 }
 
-void HCSR04_Trigger(void) {
-    HAL_GPIO_WritePin(TRIG_PIN_GPIO_Port, TRIG_PIN_Pin, GPIO_PIN_SET); // TRIG high
-    for (volatile int i = 0; i < 400; i++) __NOP(); // ~50 µs
-    HAL_GPIO_WritePin(TRIG_PIN_GPIO_Port, TRIG_PIN_Pin, GPIO_PIN_RESET); // TRIG low
-    echo_start_flag=0;
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    /* Obsługa HC-SR04 (ECHO) */
+    HCSR04_ProcessExti(&hcsr, GPIO_Pin);
+
 }
 
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
-    if (GPIO_Pin == ECHO_PIN_Pin) {
-        if (echo_start_flag==0) {
-            // Narastające zbocze – start pomiaru
-            echo_start_flag = 1;
-            __HAL_TIM_SET_COUNTER(&htim2, 0);
-            HAL_TIM_Base_Start(&htim2);
-        } else {
-            // Opadające zbocze – koniec pomiaru
-            echo_end = __HAL_TIM_GET_COUNTER(&htim2);
-            HAL_TIM_Base_Stop(&htim2);
-            echo_start_flag = 0;
-        }
-    }
-}
 
 void REF_SIGNAL(volatile uint8_t num) {
     if (num < sizeof(ref_signals)/sizeof(ref_signals[0])) {
