@@ -11,9 +11,9 @@
 
 #include "main.h"
 
-#define DSHOT150_TIM_ARR       266-1
-#define DSHOT150_BIT_0         100
-#define DSHOT150_BIT_1         200
+#define DSHOT300_TIM_ARR       266-1
+#define DSHOT300_BIT_0         100
+#define DSHOT300_BIT_1         200
 #define DSHOT_TELEMETRY        0 // usually 0 unless ESC supports telemetry
 #define SPEED_MIN              48
 #define SPEED_MAX              2047
