@@ -1,7 +1,7 @@
 # 🚀 Drone Control System – Master Project
 
 **Quadcopter 4DOF Experimental Control Platform**  
-_Master’s Thesis Project by [Michał Rogul](https://github.com/MRogul)_
+_Master’s Thesis Project by [Michał Rogulski](https://github.com/MRogul)_
 
 ---
 
@@ -71,6 +71,6 @@ You are free to use and modify it for academic or research purposes.
 
 ---
 
-**Author:** [Michał Rogul](https://github.com/MRogul)  
+**Author:** [Michał Rogulski](https://github.com/MRogul)  
 🎓 Warsaw University of Technology  
 📘 [Drone_Control_System_Master_Project](https://github.com/MRogul/Drone_Control_System_Master_Project)

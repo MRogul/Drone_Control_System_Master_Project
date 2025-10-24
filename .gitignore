@@ -1,0 +1,95 @@
+# ==========================================
+# 🧱 Ogólne systemowe / edytorowe pliki
+# ==========================================
+Thumbs.db
+.DS_Store
+*.bak
+*.tmp
+*.old
+*.swp
+
+# ==========================================
+# ⚙️ STM32 / C / kompilacja
+# ==========================================
+# Pliki wynikowe kompilacji
+*.o
+*.obj
+*.elf
+*.bin
+*.hex
+*.map
+*.lst
+*.d
+*.dep
+*.axf
+*.srec
+
+# Foldery buildów i środowisk
+/Debug/
+/Release/
+/build/
+/Build/
+/Core/Inc/
+/Core/Src/
+
+# ==========================================
+# 🧩 Projekty IDE (CubeIDE, VSCode, itp.)
+# ==========================================
+.vscode/
+.idea/
+*.user
+*.launch
+*.workspace
+*.uvoptx
+*.uvprojx
+
+# ==========================================
+# 📊 Dane z badań / eksperymenty
+# ==========================================
+# (Zostają lokalnie, nie trafiają do repo)
+**/Badania/**
+**/Tests/**
+**/test_*/**
+**/Test_*/**
+**/wyniki/**
+**/dane/**
+*.csv
+*.log
+*.dat
+
+# ==========================================
+# 📚 LaTeX / Overleaf / magisterka
+# ==========================================
+*.aux
+*.bbl
+*.blg
+*.brf
+*.lof
+*.lot
+*.fls
+*.out
+*.toc
+*.fdb_latexmk
+*.synctex.gz
+*.nav
+*.snm
+*.vrb
+*.pdf
+/_minted*/
+
+# ==========================================
+# 🔧 MATLAB / Octave (jeśli używasz)
+# ==========================================
+*.mat
+*.fig
+*.asv
+*.mex*
+
+# ==========================================
+# 🧪 Inne tymczasowe / robocze pliki
+# ==========================================
+*.zip
+*.rar
+*.7z
+*.bak
+*.backup
