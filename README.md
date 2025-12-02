@@ -1,21 +1,25 @@
 # 🚀 Drone Control System – Master Project
 
-**Quadcopter 4DOF Experimental Control Platform**  
+**Test stand for evaluating drone control systems with 4DOF**  
 _Master’s Thesis Project by [Michał Rogulski](https://github.com/MRogul)_
 
 ---
 
-## 🧩 Overview
+## 📘 Project Summary
 
-This repository presents the **design and implementation of a drone control system** developed as part of a Master’s Thesis at the **Warsaw University of Technology**.  
-The project focuses on the creation of a **4 Degrees of Freedom (4DOF) quadrotor test stand**, combining simulation, embedded programming, and real-world experiments.
+This repository contains the full implementation of a 4-DOF quadrotor control system, including:
 
-### 🛠️ The system enables testing of:
-- Attitude and altitude control (**Roll**, **Pitch**, **Yaw**, **Z**)
-- Sensor fusion using **Complementary** and **Kalman filters**
-- Real-time **PID tuning** via ESP8266 web interface
-- Live data visualization in **STM32CubeMonitor**
+• custom-built experimental test stand,
 
+• STM32 firmware for sensor acquisition, control algorithms and motor mixing,
+
+• ESP8266-based web interface for real-time tuning,
+
+• MATLAB/Simulink models used for controller prototyping and simulation,
+
+• a complete validation pipeline comparing the mathematical model with real measurements.
+
+The project was developed as part of a Master’s Thesis in Control Engineering.
 ---
 
 ## 📸 Real Test Stand
@@ -29,17 +33,71 @@ The project focuses on the creation of a **4 Degrees of Freedom (4DOF) quadrotor
 
 ## ⚙️ Project Highlights
 
-✨ **Modular Embedded Design**  
-Built on STM32L432KC microcontroller, with independent PID loops for all four DOF.
+✨ **Embedded Control System (STM32)**
 
-🎛️ **Real-Time Control & Monitoring**  
-Wi-Fi tuning via ESP8266 and data acquisition using STM32CubeMonitor.
+• Four PID loops: roll, pitch, yaw, altitude (Z)
 
-🧠 **Sensor Fusion**  
-Complementary and Kalman filters used for attitude estimation based on IMU (Bosch BNO055).
+• Derivative-on-measurement (reduces derivative kick)
 
-🔬 **Experimental Validation**  
-Validated on a custom-built 4DOF test rig enabling safe, repeatable lab experiments with wired power supply.
+• Anti-windup (conditional integration)
+
+• Mixer for quadcopter X-configuration
+
+• Digital ESC control via DShot300
+
+🧠 **Sensor Fusion Algorithms**
+
+• Complementary filter (custom implementation)
+
+• Kalman filter (custom implementation)
+
+• BNO055 onboard fusion (BSX) as reference
+
+🌐 **Real-Time Tuning via ESP8266**
+
+• Web UI hosted directly on ESP8266 (AP mode)
+
+• Live PID tuning
+
+• Real-time telemetry
+
+• No need to reflash STM32 to change parameters
+
+🛠️ **Simulation & Validation**
+
+• 4DOF Simulink model (Plant + Sensors + Mixer + PID)
+
+• Comparison against real test stand
+
+• Step-response evaluation for all controlled axes
+
+• Analysis of estimator influence on closed-loop behaviour
+
+---
+
+## 🗂 Repository Structure
+
+Drone_Control_System_Master_Project/
+
+│
+
+├── Drone_Control/          # STM32 code (IMU, sonar, PID, mixer, DShot)
+
+├── ESP8266/                # Web interface for real-time tuning
+
+├── MATLAB/                 # 4DOF simulation model
+
+├── CAD files/              # CAD files of the test stand
+
+├── Library/BNO055/         # BNO055 Library
+
+├── images/                 # Photos and diagrams
+
+├── Datasheets/             # Helpful materials
+
+├── Results/                # Responses and comparisons
+
+└── README.md
 
 ---
 
@@ -48,7 +106,7 @@ Validated on a custom-built 4DOF test rig enabling safe, repeatable lab experime
 | Category | Tools |
 |-----------|-------|
 | Microcontroller | STM32L432KC |
-| IDE | STM32CubeIDE |
+| IDE | STM32CubeMX |
 | Communication | ESP8266 (Wi-Fi, Web Interface) |
 | Simulation | MATLAB / Simulink |
 | Visualization | STM32CubeMonitor |
@@ -56,10 +114,33 @@ Validated on a custom-built 4DOF test rig enabling safe, repeatable lab experime
 
 ---
 
+## 🧪 Experimental Results
+
+Tests performed on the 4DOF stand include:
+
+• step responses for roll, pitch, yaw and vertical altitude (Z)
+
+• comparison of Complementary, Kalman and BNO055 fusion
+
+• PID tuning experiments in simulation and on hardware
+
+• validation of control structure and estimator performance
+
+All implemented algorithms (PID + sensor fusion) behave correctly and consistently across simulation and physical testing.
+
+---
+
 ## 🪶 About the Project
 
-This project demonstrates how a **complete UAV control system** can be built from **open-source tools** and **low-cost components**, serving as a platform for research and teaching in the fields of drone dynamics, control, and embedded systems.  
-The quadrotor operates on a **fixed test rig (4DOF)**, allowing precise control of rotation and altitude while ensuring safety and repeatability of experiments.
+This platform demonstrates how a complete UAV stabilization system can be built using accessible components, providing:
+
+• safe indoor flight testing,
+
+• repeatable laboratory experiments,
+
+• a foundation for research on estimation & control,
+
+• a practical educational tool for UAV control engineering.
 
 
 ---
